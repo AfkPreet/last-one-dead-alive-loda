@@ -122,6 +122,10 @@ html, body {
   color: var(--text); text-indent: .06em;
   text-shadow: 0 0 26px rgba(255,45,85,.55), 0 0 70px rgba(123,47,247,.4);
 }
+.logo-sub {
+  font-size: 10.5px; letter-spacing: .52em; color: var(--cyan);
+  text-indent: .52em; margin-top: 9px; opacity: .85;
+}
 .tag { color: var(--dim); font-size: 13.5px; line-height: 1.6; margin: 0 0 4px; }
 .tag b { color: var(--text); }
 
@@ -201,7 +205,7 @@ html, body {
   padding: 0 14px;
 }
 .hud-cell { min-width: 74px; }
-.hud-mid { text-align: center; flex: 1; }
+.hud-mid { text-align: center; flex: 1; display: flex; align-items: flex-start; justify-content: center; }
 .hud-right { text-align: right; }
 .hud-label { font-size: 8.5px; letter-spacing: .2em; color: var(--dim); }
 .hud-value { font-size: 21px; font-weight: 800; letter-spacing: .02em; line-height: 1.15; }
@@ -233,9 +237,18 @@ html, body {
    a game where #1 means the opposite of what it means everywhere else. */
 .pips {
   position: absolute; left: 0; right: 0;
-  top: calc(max(10px, env(safe-area-inset-top)) + 46px);
+  top: calc(max(10px, env(safe-area-inset-top)) + 42px);
   display: flex; justify-content: center; gap: 5px; padding: 0 14px;
 }
+/* Full width of its own: the phase strings are sentences, and inside the
+   narrow centre HUD cell they wrapped onto the pip row on a 320px screen. */
+.phase {
+  position: absolute; left: 0; right: 0;
+  top: calc(max(10px, env(safe-area-inset-top)) + 56px);
+  text-align: center; padding: 0 12px;
+  font-size: 9px; letter-spacing: .2em; color: var(--dim);
+}
+.phase.warn { color: var(--crimson); animation: pulse .6s ease-in-out infinite; }
 .pip {
   width: 7px; height: 7px; border-radius: 50%;
   background: #2a2140; transition: background .25s ease, transform .25s ease, box-shadow .25s ease;
@@ -254,7 +267,6 @@ html, body {
 }
 .burn-rate { font-weight: 800; font-size: 12px; letter-spacing: .04em; transition: color .2s linear; }
 .hud-sub { font-size: 13px; color: var(--text); opacity: .85; letter-spacing: .08em; }
-#hud-phase-label.warn { color: var(--crimson); animation: pulse .6s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
 
 #flamebar {
@@ -273,12 +285,32 @@ html, body {
 .coach.show { opacity: 1; }
 .coach em { color: var(--crimson); font-style: normal; }
 
+/* ---------- naming ---------- */
+.naming-eyebrow { font-size: 9.5px; letter-spacing: .28em; color: var(--cyan); }
+.naming-q { font-size: clamp(19px, 6.4vw, 25px); font-weight: 800; letter-spacing: .05em; margin: 2px 0 6px; }
+.nameinput {
+  width: 100%; font: inherit; font-size: 20px; font-weight: 800;
+  letter-spacing: .22em; text-align: center; text-transform: uppercase;
+  color: var(--text); background: rgba(20,15,36,.8);
+  border: 1px solid var(--line); border-radius: 13px; padding: 15px 12px;
+}
+.nameinput:focus { outline: none; border-color: var(--cyan); }
+.nameinput::placeholder { color: #3a3055; letter-spacing: .1em; }
+
 /* ---------- countdown ---------- */
 .count {
   z-index: 15; display: flex; align-items: center; justify-content: center;
-  pointer-events: none; font-size: 88px; font-weight: 800; letter-spacing: .04em;
+  pointer-events: none; padding: 0 26px; text-align: center;
+  font-size: 88px; font-weight: 800; letter-spacing: .04em;
   opacity: 0; text-shadow: 0 0 40px rgba(255,45,85,.6);
 }
+/* The opening rides the countdown, so the same element has to carry a sentence
+   as gracefully as it carries "BURN". */
+.count.line {
+  font-size: clamp(15px, 5vw, 20px); font-weight: 700; letter-spacing: .1em;
+  line-height: 1.75; text-shadow: 0 2px 20px #000, 0 0 34px rgba(0,0,0,.9);
+}
+.count em { color: var(--cyan); font-style: normal; }
 .count.tick { animation: countpop .62s ease-out; }
 @keyframes countpop {
   0%   { opacity: 0; transform: scale(1.7); }
@@ -286,9 +318,18 @@ html, body {
   70%  { opacity: 1; transform: scale(1); }
   100% { opacity: 0; transform: scale(.86); }
 }
+/* Prose has to stay up long enough to read: this holds for the same 2s the
+   countdown beat holds, instead of flashing for a fifth of a second. */
+.count.line.tick { animation: countline 2s ease-out; }
+@keyframes countline {
+  0%   { opacity: 0; transform: translateY(9px); }
+  10%  { opacity: 1; transform: none; }
+  78%  { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-7px); }
+}
 
 /* ---------- results ---------- */
-.reveal { min-height: 132px; display: flex; flex-direction: column; justify-content: center; gap: 7px; }
+.reveal { min-height: 148px; display: flex; flex-direction: column; justify-content: center; gap: 7px; }
 .reveal .r1 {
   font-size: clamp(30px, 10vw, 42px); font-weight: 800; letter-spacing: .04em;
   opacity: 0; animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
@@ -297,7 +338,13 @@ html, body {
   font-size: 13.5px; color: var(--dim); letter-spacing: .06em; line-height: 1.55;
   opacity: 0; animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
 }
-.reveal .r3 { color: var(--cyan); font-weight: 700; letter-spacing: .14em; font-size: 12.5px; }
+.reveal .r3 {
+  color: var(--cyan); font-weight: 700;
+  font-size: clamp(10.5px, 3.4vw, 12.5px);
+  letter-spacing: clamp(.04em, .8vw, .14em);
+  text-wrap: balance;
+}
+.reveal .dim { color: var(--dim); font-size: .88em; }
 .reveal .r4 {
   font-size: 12px; color: var(--dim); opacity: 0; font-style: italic; letter-spacing: .02em;
   animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
@@ -307,9 +354,15 @@ html, body {
 .lose .r1 { color: var(--text); }
 
 .strip {
-  font-size: 19px; letter-spacing: 1.5px; line-height: 1.35;
-  white-space: pre;          /* the burnline's rows are newline-separated */
-  overflow-x: auto; max-width: 100%;
+  /* A grid: rows left-aligned to each other, the block itself centred, and
+     sized so ten cells clear a 320px screen. */
+  display: inline-block;
+  text-align: left;
+  font-size: clamp(14px, 5.2vw, 19px);
+  letter-spacing: clamp(0.5px, 0.4vw, 1.5px);
+  line-height: 1.3;
+  white-space: pre;
+  max-width: 100%;
 }
 .stats {
   display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%;
@@ -334,6 +387,7 @@ html, body {
 
 @media (prefers-reduced-motion: reduce) {
   .count.tick { animation-duration: .3s; }
+  .count.line.tick { animation: none; opacity: 1; }
   .reveal .r1, .reveal .r2, .reveal .r3 { animation-duration: .01s; }
   #hud-phase-label.warn { animation: none; }
 }
@@ -345,11 +399,10 @@ html, body {
   <div id="hud" class="layer" aria-hidden="true">
     <div class="hud-top">
       <div class="hud-cell">
-        <div class="hud-label">SOULS BURNING</div>
+        <div class="hud-label">STILL BURNING</div>
         <div class="hud-value" id="hud-alive">12</div>
       </div>
       <div class="hud-cell hud-mid">
-        <div class="hud-label" id="hud-phase-label">THE LIGHT HOLDS</div>
         <div class="hud-sub" id="hud-clock">0:00</div>
       </div>
       <div class="hud-cell hud-right">
@@ -359,6 +412,7 @@ html, body {
       </div>
     </div>
     <div id="pips" class="pips" aria-hidden="true"></div>
+    <div id="hud-phase-label" class="phase">THE LIGHT HOLDS</div>
     <div id="burnline-hud">
       <span class="burn-label">BURNING</span>
       <span class="burn-rate" id="hud-burn">0.0/s</span>
@@ -373,8 +427,9 @@ html, body {
       <div class="logo">
         <div class="logo-l1">LAST ONE</div>
         <div class="logo-l2">DEAD</div>
+        <div class="logo-sub">THE VIGIL</div>
       </div>
-      <p class="tag">Twelve souls. Everybody burns out.<br><b>Win by dying last.</b></p>
+      <p class="tag" id="menu-tag">Twelve lamps. Everybody burns out.<br><b>Carry it to the end of the night.</b></p>
       <button id="btn-play" class="btn btn-primary">ENTER THE DARK</button>
       <div class="seedline">
         <span id="menu-seed">DAILY &#xb7; DAY 1</span>
@@ -448,6 +503,21 @@ html, body {
       </div>
       <button id="btn-menu" class="linkbtn">back to the dark</button>
       <div id="share-note" class="hint"></div>
+    </div>
+  </div>
+
+  <!-- ===================== NAME PROMPT ===================== -->
+  <!-- Shown once: you get a name only by carrying a night to its end. -->
+  <div id="naming" class="layer screen">
+    <div class="stack">
+      <div class="naming-eyebrow">YOU REACHED THE END OF THE NIGHT</div>
+      <h2 class="naming-q">WHAT DO WE CALL YOU?</h2>
+      <input id="name-input" class="nameinput" type="text" maxlength="12"
+             autocomplete="off" autocorrect="off" autocapitalize="characters"
+             spellcheck="false" placeholder="&#x2014;">
+      <p class="hint">From tonight your name is in the dark with the others.</p>
+      <button id="btn-name-ok" class="btn btn-primary">THAT IS MY NAME</button>
+      <button id="btn-name-skip" class="linkbtn">stay nameless</button>
     </div>
   </div>
 
@@ -1437,6 +1507,182 @@ html, body {
   };
 })(typeof self !== 'undefined' ? self : this);
 
+/* ===== js/story.js ===== */
+/* story.js \u2014 the narrative layer.
+ *
+ * The premise is a re-reading of a constant that was already there: every soul
+ * enters the arena at FLAME_START, so every soul was handed the same forty by
+ * somebody who is no longer in it. You are the twelfth lamp. The oil in you is
+ * not yours. The night ends when the last lamp goes out, and only that lamp is
+ * still burning when it does \u2014 so being last is not a score, it is the only
+ * position from which the thing you were handed arrives anywhere.
+ *
+ * All shipped prose lives in the tables at the top of this file; the machinery
+ * below is a persistent ledger, an opening beat player, and an ending selector.
+ * Nothing here touches the simulation.
+ */
+(function (global) {
+  'use strict';
+
+  var Store = global.Platform.Store;
+
+  /* ------------------------------------------------------------- THE LEDGER
+   * Who you are, who you are carrying, and everyone you have met. The eleven
+   * other lamps are drawn from your own history, so night one is a field of
+   * strangers and night ten is a room full of people you have failed. */
+
+  var STRANGERS = [
+    'MARA', 'SOOT', 'WICK', 'CINDER', 'ASHFALL', 'GLIM', 'TALLOW', 'PYRE',
+    'FLICKER', 'DUSK', 'CHAR', 'GLOAM', 'MURK', 'EMBERLY', 'KINDLE', 'SMOLDER',
+    'RUSHLIGHT', 'TAPER', 'SPARK', 'BRAND', 'LANTERN', 'HOLLOW'
+  ];
+
+  var BLANK = {
+    you: null,          // your name, earned by carrying a night to its end
+    carrying: null,     // { name, time } \u2014 whose oil you hold tonight
+    met: [],            // [{ name, fate }] fate: 'outlasted' | 'beat' | 'dropped'
+    chain: 0,           // nights carried unbroken
+    lastDropped: null,  // who went out in your hands, for tomorrow's opening
+    bestChain: 0,
+    nights: 0,
+    carried: 0,         // nights you got them to the end
+    dropped: 0
+  };
+
+  function load() {
+    var l = Store.get('ledger', null);
+    if (!l) return JSON.parse(JSON.stringify(BLANK));
+    for (var k in BLANK) if (!(k in l)) l[k] = BLANK[k];
+    if (!Array.isArray(l.met)) l.met = [];
+    return l;
+  }
+  function save(l) { Store.set('ledger', l); return l; }
+
+  /** Everyone whose name can appear in the field tonight, yours included once
+   *  you have one \u2014 play long enough and you walk in and find yourself there. */
+  function namePool(ledger, rng, count) {
+    var pool = [];
+    for (var i = 0; i < ledger.met.length; i++) pool.push(ledger.met[i].name);
+    if (ledger.you) pool.push(ledger.you);
+    if (ledger.carrying && ledger.carrying.name) pool.push(ledger.carrying.name);
+    // Deduplicate, keeping the most recent mention of each name.
+    var seen = Object.create(null), uniq = [];
+    for (var j = pool.length - 1; j >= 0; j--) {
+      if (!seen[pool[j]]) { seen[pool[j]] = 1; uniq.unshift(pool[j]); }
+    }
+    var strangers = STRANGERS.filter(function (n) { return !seen[n]; });
+    rng.shuffle(strangers);
+    var out = uniq.slice(-count);
+    while (out.length < count && strangers.length) out.push(strangers.pop());
+    while (out.length < count) out.push('LAMP ' + (out.length + 1));
+    return rng.shuffle(out).slice(0, count);
+  }
+
+  /* -------------------------------------------------------------- THE NIGHT
+   * Called once a run resolves. Returns what the results screen should say and
+   * updates the ledger for the next night. */
+  function resolveNight(ledger, res, standings) {
+    var carried = ledger.carrying;
+    var won = res.rank === 1;
+    var outcome = {
+      won: won,
+      carriedName: carried ? carried.name : null,
+      askName: false,
+      chainBroken: false,
+      newCarrying: null
+    };
+
+    ledger.nights++;
+
+    if (won) {
+      ledger.carried++;
+      ledger.lastDropped = null;
+      ledger.chain++;
+      if (ledger.chain > ledger.bestChain) ledger.bestChain = ledger.chain;
+      // You reached the end of the night, so the next night you hand on your own.
+      if (!ledger.you) outcome.askName = true;
+      outcome.newCarrying = { name: ledger.you || null, time: Math.round(res.time) };
+    } else {
+      ledger.dropped++;
+      ledger.chain = 0;
+      outcome.chainBroken = true;
+      // Who you dropped and who fills you next are two different people: one
+      // went out in your hands, the other reached the end without you.
+      ledger.lastDropped = carried ? (carried.name || null) : null;
+      // Whoever did reach the end is who fills you tomorrow.
+      var last = standings && standings[0] ? standings[0] : null;
+      outcome.newCarrying = last ? { name: last.name, time: Math.round(last.t) } : null;
+    }
+
+    // Remember everyone from tonight and what they did to you.
+    if (standings) {
+      for (var i = 0; i < standings.length; i++) {
+        var s = standings[i];
+        if (s.player) continue;
+        remember(ledger, s.name, s.rank < res.rank ? 'beat' : 'outlasted');
+      }
+    }
+    ledger.carrying = outcome.newCarrying;
+    save(ledger);
+    return outcome;
+  }
+
+  function remember(ledger, name, fate) {
+    if (!name) return;
+    for (var i = 0; i < ledger.met.length; i++) {
+      if (ledger.met[i].name === name) { ledger.met[i].fate = fate; return; }
+    }
+    ledger.met.push({ name: name, fate: fate });
+    if (ledger.met.length > 40) ledger.met.shift();
+  }
+
+  function nameYourself(ledger, name) {
+    name = String(name || '').toUpperCase().replace(/[^A-Z0-9 '\-]/g, '').trim().slice(0, 12);
+    if (!name) return null;
+    ledger.you = name;
+    if (ledger.carrying && !ledger.carrying.name) ledger.carrying.name = name;
+    save(ledger);
+    return name;
+  }
+
+  /* ------------------------------------------------------------- THE OPENING
+   * Rides the existing 3-2-1 countdown: one line per beat, ~2.2s each, tap to
+   * skip. After the third night it collapses to the middle line alone. */
+  function opening(ledger) {
+    var c = ledger.carrying;
+    if (!c) {
+      return ['SOMEONE WENT OUT HERE BEFORE YOU.',
+              'THEY LEFT YOU FORTY.',
+              'CARRY IT TO THE END OF THE NIGHT.'];
+    }
+    if (ledger.chain === 0 && ledger.nights > 0) {
+      var lost = ledger.lastDropped;
+      var giver = c.name || 'SOMEONE';
+      return [(lost ? lost + ' WENT OUT IN YOUR HANDS.'
+                    : 'IT WENT OUT IN YOUR HANDS.'),
+              giver + ' LEFT YOU WHAT ' + giver + ' HAD.',
+              "DON'T DO IT TWICE."];
+    }
+    return [(c.name || 'SOMEONE') + ' CARRIED IT ' + mmss(c.time) + '.',
+            'NOW YOU DO.',
+            'TO THE END OF THE NIGHT.'];
+  }
+
+  function mmss(sec) {
+    var m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  global.Story = {
+    load: load, save: save,
+    namePool: namePool,
+    resolveNight: resolveNight,
+    nameYourself: nameYourself,
+    opening: opening,
+    STRANGERS: STRANGERS
+  };
+})(typeof self !== 'undefined' ? self : this);
+
 /* ===== js/render.js ===== */
 /* render.js \u2014 everything you see inside the arena.
  * Canvas2D only, no shadowBlur in the hot loop; all bloom comes from cached
@@ -1455,6 +1701,8 @@ html, body {
     this.showNames = true;
     this.reduced = false;
     this.zoom = 1;
+    this.coachBand = null;     // [top, bottom] in screen px while a coach line shows
+    this.marker = null;
     this._lastT = 0;
     this._bg = null; this._bgKey = '';
   }
@@ -1755,6 +2003,14 @@ html, body {
 
   /** True when no other living soul is close enough for the labels to collide. */
   Renderer.prototype._hasRoom = function (game, s) {
+    // The coach line owns its band while it is showing; a name label underneath
+    // it is unreadable and makes both look like a mistake.
+    if (this.coachBand) {
+      // Test where the LABEL lands, not the soul: it is drawn above the body,
+      // so a soul below the band can still push its name into it.
+      var ly = this.toScreenY(s.y - s.radius() - 1.4);
+      if (ly > this.coachBand[0] && ly < this.coachBand[1]) return false;
+    }
     for (var i = 0; i < game.souls.length; i++) {
       var o = game.souls[i];
       if (o === s || !o.alive) continue;
@@ -1813,7 +2069,10 @@ html, body {
     if (!p || !p.alive) return;
     var m = 20;
     var x = this.toScreenX(p.x), y = this.toScreenY(p.y);
-    if (x >= m && x <= cw - m && y >= m && y <= ch - m) return;
+    // Only once the soul is FULLY off the canvas. Firing on the margin drew the
+    // marker on top of a player who was still half visible, which read as a bug.
+    var r = p.radius() * this.scale + 4;
+    if (x + r > 0 && x - r < cw && y + r > 0 && y - r < ch) return;
 
     var cx = cw / 2, cy = ch / 2;
     var dx = x - cx, dy = y - cy;
@@ -2022,6 +2281,8 @@ html, body {
     this.kills = 0;
     this.eaten = 0;
     this.stolen = 0;
+    this.gave = 0;                     // flame this soul burned as light
+    this.spilt = 0;                    // flame this soul destroyed by tearing
     this.peak = K.FLAME_START;
   }
   Soul.prototype.radius = function () { return K.R_MIN + K.R_SPAN * (this.flame / K.FLAME_MAX); };
@@ -2063,6 +2324,13 @@ html, body {
     this.finaleT = 0;
     this.spectateT = 0;
     this.fuelGone = false;
+    // Two ledgers the story hangs on, both exact rather than estimated:
+    //   light  \u2014 flame actually consumed by draining, i.e. oil turned into light
+    //   spilled \u2014 flame destroyed mid-transfer, which never drains and so never
+    //             shines. Conservation holds: startFlame + fuelEaten = light + spilled.
+    this.light = 0;
+    this.spilled = 0;
+    this.startFlame = 0;
     this._soloRate = 0;
     this.letGoUsed = false;
     this.result = null;
@@ -2114,6 +2382,7 @@ html, body {
       if (isPlayer) this.player = s;
     }
 
+    for (var i2 = 0; i2 < this.souls.length; i2++) this.startFlame += this.souls[i2].flame;
     for (var e = 0; e < K.EMBER_LIVE; e++) this._spawnEmber(true);
   };
 
@@ -2491,7 +2760,11 @@ html, body {
         var amount = clamp(Math.abs(diff) * K.STEAL_RATIO, K.STEAL_MIN, K.STEAL_MAX);
         amount = Math.min(amount, bright.flame);
         bright.flame -= amount;
-        dim.flame = Math.min(K.FLAME_MAX, dim.flame + amount * K.STEAL_KEEP);
+        var kept = amount * K.STEAL_KEEP;
+        var lost = amount - kept;
+        this.spilled += lost;
+        dim.spilt += lost;                  // charged to whoever did the tearing
+        dim.flame = Math.min(K.FLAME_MAX, dim.flame + kept);
         dim.peak = Math.max(dim.peak, dim.flame);
         dim.stolen += amount;
         A.cd[key] = B.cd[key] = this.t + K.STEAL_CD;
@@ -2531,10 +2804,15 @@ html, body {
         // The last soul burning gets a guaranteed FINALE_SECS of screen time.
         // Left to the normal formula this moment lasts a tenth of a second.
         if (this._soloRate === 0) {
+          // The final flare is given oil, so count it as oil the lamp had.
+          this.startFlame += Math.max(0, K.FINALE_FLAME - s.flame);
           s.flame = Math.max(s.flame, K.FINALE_FLAME);
           s.peak = Math.max(s.peak, s.flame);
           this._soloRate = s.flame / K.FINALE_SECS;
         }
+        var burn = Math.min(s.flame, this._soloRate * dt);
+        this.light += burn;
+        s.gave += burn;
         s.flame -= this._soloRate * dt;
         if (s.isPlayer) this._playerOutside = false;
         if (s.flame <= 0) { s.flame = 0; this._kill(s); }
@@ -2550,6 +2828,9 @@ html, body {
             life: 0.4, r: 1.1, color: s.color(), drag: 0.9, glow: true });
         }
       }
+      var burned = Math.min(s.flame, d * dt);
+      this.light += burned;
+      s.gave += burned;
       s.flame -= d * dt;
       if (s.isPlayer) this._playerOutside = outside;
 
@@ -2598,6 +2879,13 @@ html, body {
     }
   };
 
+  /** Total flame the arena ever handed out as fuel. */
+  Game.prototype._fuelEaten = function () {
+    var n = 0;
+    for (var i = 0; i < this.souls.length; i++) n += this.souls[i].eaten;
+    return n * K.EMBER_VALUE;
+  };
+
   Game.prototype._finish = function () {
     if (this.state === 'done') return;
     this.state = 'done';
@@ -2624,6 +2912,11 @@ html, body {
       cut: stragglers.length > 0,
       eaten: p.eaten,
       stolen: Math.round(p.stolen),
+      gave: Math.round(p.gave),         // light this player personally gave
+      spilt: Math.round(p.spilt),       // light this player personally destroyed
+      light: Math.round(this.light),      // total light the arena gave
+      spilled: Math.round(this.spilled),  // total destroyed by tearing
+      oil: Math.round(this.startFlame + this._fuelEaten()),   // all there ever was
       peak: Math.round(p.peak),
       won: (p.rank || 1) === 1,
       outlasted: (p.rank || 1) - 1,        // how many souls managed to die after you
@@ -2979,6 +3272,7 @@ html, body {
     phase: $('hud-phase-label'), bar: $('flamebar-fill'),
     coach: $('coach'), count: $('countdown'), toast: $('toast'),
     menu: $('menu'), how: $('how'), settings: $('settings'), results: $('results'),
+    naming: $('naming'), nameInput: $('name-input'), tag: $('menu-tag'),
     menuSeed: $('menu-seed'), streak: $('streakline'),
     reveal: $('res-reveal'), strip: $('res-strip'), stats: $('res-stats'), shareNote: $('share-note')
   };
@@ -2987,6 +3281,7 @@ html, body {
   var renderer = new global.Renderer(surface);
   var input = new global.Input(els.stage);
   var game = null;
+  var ledger = global.Story.load();
   var mode = Store.get('mode', 'daily');
   var challenge = S.parseChallenge();
   var sharePayload = '';               // built at death; the click handler must not compute it
@@ -2996,7 +3291,7 @@ html, body {
 
   /* ---------- helpers ---------- */
   function show(name) {
-    ['menu', 'how', 'settings', 'results'].forEach(function (k) {
+    ['menu', 'how', 'settings', 'results', 'naming'].forEach(function (k) {
       els[k].classList.toggle('show', k === name);
     });
     els.hud.classList.toggle('show', name === null);
@@ -3094,9 +3389,19 @@ html, body {
       $('btn-mode').textContent = 'switch to daily';
     }
     var bits = [];
-    if (p.streak > 0) bits.push('streak ' + p.streak + (p.best > p.streak ? ' (best ' + p.best + ')' : ''));
-    if (p.plays > 0) bits.push(p.wins + '/' + p.plays + ' died last');
+    if (ledger.you) bits.push('you are ' + ledger.you);
+    if (ledger.chain > 0) bits.push(ledger.chain + ' night' + (ledger.chain === 1 ? '' : 's') + ' carried');
+    else if (ledger.nights > 0) bits.push('carrying ' + (ledger.carrying && ledger.carrying.name ? ledger.carrying.name : 'a stranger'));
+    if (ledger.nights > 0) bits.push(ledger.carried + '/' + ledger.nights + ' to the end');
+    if (p.streak > 1) bits.push('\ud83d\udd25' + p.streak);
     els.streak.textContent = bits.join(' \u00b7 ');
+
+    // Night one states the rule; after that the tagline names who you hold.
+    if (ledger.nights > 0 && ledger.carrying) {
+      els.tag.innerHTML = 'You are carrying <b>' +
+        (ledger.carrying.name || 'someone with no name left') + '</b>.<br>' +
+        'Carry it to the end of the night.';
+    }
   }
 
   /* ---------- onboarding ---------- */
@@ -3106,6 +3411,15 @@ html, body {
     coachQueue.push([msg, secs || 2.6]);
   }
   function pumpCoach(now) {
+    // Tell the renderer which band of the screen the coach line is occupying so
+    // soul name labels get out of its way.
+    if (els.coach.classList.contains('show')) {
+      var cb = els.coach.getBoundingClientRect();
+      var fb = els.frame.getBoundingClientRect();
+      renderer.coachBand = [cb.top - fb.top - 6, cb.bottom - fb.top + 6];
+    } else {
+      renderer.coachBand = null;
+    }
     if (now < coachUntil) return;
     if (!coachQueue.length) { els.coach.classList.remove('show'); return; }
     var c = coachQueue.shift();
@@ -3164,7 +3478,7 @@ html, body {
     }
   }
 
-  var countdownN = 0, countdownT = 0;
+  var countdownN = 0, countdownT = 0, openingLines = [];
   var seenPickup = false, seenSteal = false, seenDrain = false, warnedOnce = false;
 
   function startMatch() {
@@ -3183,6 +3497,12 @@ html, body {
     game.reduced = !settings.shake;
     renderer.contrast = settings.contrast;
     renderer.showNames = settings.names;
+
+    // Name the other eleven from your own ledger: strangers on night one, and
+    // by night ten a field of people you have outlasted, lost to, or dropped.
+    // Purely cosmetic \u2014 the arena itself stays identical for everyone.
+    var pool = global.Story.namePool(ledger, new R.Rng(game.seedStr + ':names'), Game.K.SOULS - 1);
+    for (var pi = 1; pi < game.souls.length; pi++) game.souls[pi].name = pool[pi - 1];
 
     // A challenger's soul is renamed after them, but nothing about the
     // simulation changes \u2014 the daily has to be identical for everyone or the
@@ -3206,8 +3526,14 @@ html, body {
     ghostPassed = false;
 
     global.__g = game; global.__r = renderer; global.__i = input;   // test harness hooks (tools/*.js)
+    // The opening is three lines on the three countdown beats. After a few
+    // nights it collapses to the one line that still matters.
+    openingLines = ledger.nights < 3 ? global.Story.opening(ledger)
+                                     : [global.Story.opening(ledger)[0]];
     show(null);
-    countdownN = 3; countdownT = 0;
+    // Fire the first line on the very first frame rather than after a beat of
+    // dead air.
+    countdownN = openingLines.length; countdownT = 99;
     lastT = performance.now(); acc = 0;
     A.startMusic();
     A.setIntensity(0);
@@ -3233,20 +3559,23 @@ html, body {
     // Countdown runs on wall time, before the sim starts.
     if (game.state === 'countdown') {
       countdownT += dt;
-      if (countdownT >= 0.75) {
+      // Prose needs longer on screen than a digit does; the last beat is short.
+      var hold = countdownN > 0 ? 2.0 : 0.7;
+      if (countdownT >= hold) {
         countdownT = 0;
         if (countdownN > 0) {
-          els.count.textContent = countdownN === 0 ? '' : countdownN;
+          var idx = openingLines.length - countdownN;
+          els.count.innerHTML = openingLines[idx] || '';
+          els.count.classList.add('line');
           els.count.classList.remove('tick');
           void els.count.offsetWidth;                 // restart the CSS animation
           els.count.classList.add('tick');
-          A.play('count', 3 - countdownN);
+          A.play('count', idx);
           haptic(12);
           countdownN--;
         } else {
           els.count.textContent = 'BURN';
-          toast('BE THE LAST TO DIE', 2400);
-          els.count.classList.remove('tick');
+          els.count.classList.remove('line', 'tick');
           void els.count.offsetWidth;
           els.count.classList.add('tick');
           A.play('count', 3);
@@ -3266,7 +3595,7 @@ html, body {
 
     drainEvents();
     updateHud();
-    pumpCoach(now / 1000);
+    if (game.state !== 'countdown') pumpCoach(now / 1000);
 
     renderer.draw(game, input, now / 1000);
   }
@@ -3395,6 +3724,10 @@ html, body {
     cancelAnimationFrame(loopId);
     loopId = requestAnimationFrame(idleFrame);
 
+    // Who you were carrying, whether they reached the end, and who fills you
+    // tomorrow. Reads the run's real numbers; writes the ledger for next time.
+    var night = global.Story.resolveNight(ledger, res, res.standings);
+
     var dayNum = dayNumFor();
     var progress = S.recordDaily(dayNum, res);   // no-ops unless this was today's daily
     // Precompute the share string NOW. Building it inside the click handler
@@ -3406,7 +3739,7 @@ html, body {
     coachSeen = Math.min(9, coachSeen + 1);
     Store.set('coached', coachSeen);
 
-    renderReveal(res, progress);
+    renderReveal(res, progress, night);
     show('results');
     // The results panel starts almost transparent so the punchline lands over
     // the arena, on the player's own death bloom, not after a screen wipe.
@@ -3415,11 +3748,19 @@ html, body {
     }, res.won ? 3000 : 2200));
     A.play(res.won ? 'win' : 'lose');
     haptic(res.won ? [40, 50, 40, 50, 120] : [120]);
+    if (night && night.askName) {
+      // Only after you have actually carried a night to its end -- and only if
+      // the player is still on the results screen. Otherwise this ambushes
+      // them a second after they have already walked back to the menu.
+      revealTimers.push(setTimeout(function () {
+        if (screen === 'results') show('naming');
+      }, 4600));
+    }
     // The player's own link should carry their run, not the challenger's.
     if (challenge) { S.clearChallengeParams(); challenge = null; }
   }
 
-  function renderReveal(res, progress) {
+  function renderReveal(res, progress, night) {
     els.reveal.className = 'reveal ' + (res.won ? 'win' : 'lose');
     els.reveal.innerHTML = '';
     els.strip.textContent = '';
@@ -3439,6 +3780,10 @@ html, body {
       line('r1', 'YOU DIED LAST.', 0);
       line('r2', '\u2026which means you were the last one alive.', 1200);
       line('r3', 'LAST ONE DEAD = LAST ONE ALIVE', 2300);
+      // The pun is the turn; this is the point of it.
+      line('r4', night && night.carriedName
+        ? night.carriedName + ' reached the end of the night in your hands.'
+        : 'It reached the end of the night in your hands.', 3100);
     } else {
       // Never a bare ordinal: "#4" means the opposite here to everywhere else,
       // and one second of "wait, is that good?" at first death loses the player.
@@ -3447,12 +3792,16 @@ html, body {
       // remaining order is a guess and stating it as fact would be a lie.
       var winner = (!res.cut && res.standings && res.standings[0]) ? res.standings[0].name : null;
       line('r1', res.letGo ? 'YOU LET GO.' : 'YOU WENT OUT EARLY.', 0);
-      var fact = res.outlasted === 1 ? 'One soul outlasted you.'
-                                     : res.outlasted + ' souls outlasted you.';
-      if (winner) fact += '<br>' + winner + ' died last.';
+      var fact = night && night.carriedName
+        ? night.carriedName + ' went out in your hands.'
+        : 'It went out in your hands.';
+      fact += '<br><span class="dim">' +
+        (res.outlasted === 1 ? 'One lamp outlasted you.'
+                             : res.outlasted + ' lamps outlasted you.') +
+        (winner ? ' ' + winner + ' reached the end.' : '') + '</span>';
       line('r2', fact, 900);
-      line('r3', 'YOU HAD TO DIE <b>LAST</b>', 1700);
-      line('r4', deathLine(res), 2400);
+      line('r3', 'THE NIGHT ENDS WITH THE <b>LAST</b> LAMP', 1800);
+      line('r4', deathLine(res), 2500);
     }
 
     revealTimers.push(setTimeout(function () {
@@ -3460,10 +3809,12 @@ html, body {
     }, res.won ? 2500 : 1900));
 
     els.stats.innerHTML =
-      '<div>BURNED FOR<b>' + S.mmss(res.time) + '</b></div>' +
+      '<div>YOU BURNED FOR<b>' + S.mmss(res.time) + '</b></div>' +
       '<div>OUTLASTED YOU<b>' + res.outlasted + ' / ' + (res.total - 1) + '</b></div>' +
-      '<div>FUEL EATEN<b>' + res.eaten + '</b></div>' +
-      '<div>FLAME STOLEN<b>' + res.stolen + '</b></div>';
+      '<div>LIGHT YOU GAVE<b>' + res.gave + '</b></div>' +
+      // The cost of taking, stated plainly. A third of every tear is destroyed
+      // and never becomes light -- this is the number that judges how you won.
+      '<div>LIGHT YOU SPILLED<b>' + res.spilt + '</b></div>';
     els.shareNote.textContent = '';
   }
 
@@ -3479,6 +3830,7 @@ html, body {
   /* ---------- input wiring ---------- */
   input.onTap = function () {
     if (screen !== null || !game) return;
+    if (game.state === 'countdown') { countdownN = 0; countdownT = 99; return; }
     if (game.state === 'spectate') { game.skipSpectate(); return; }
     game.dash();
   };
@@ -3532,10 +3884,24 @@ html, body {
     btn.addEventListener('click', function (e) { e.stopPropagation(); e.preventDefault(); });
   })();
 
+  function finishNaming(name) {
+    if (name) global.Story.nameYourself(ledger, name);
+    A.play('ui');
+    refreshMenu();
+    show('results');
+    els.results.classList.add('settled');
+  }
+  $('btn-name-ok').addEventListener('click', function () { finishNaming(els.nameInput.value); });
+  $('btn-name-skip').addEventListener('click', function () { finishNaming(null); });
+  els.nameInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); finishNaming(els.nameInput.value); }
+  });
+
   $('btn-play').addEventListener('click', function () { A.unlock(); A.play('ui'); startMatch(); });
   $('btn-again').addEventListener('click', function () { A.play('ui'); startMatch(); });
   $('btn-menu').addEventListener('click', function () {
     A.play('ui');
+    revealTimers.forEach(clearTimeout); revealTimers = [];
     cancelAnimationFrame(loopId);
     A.stopMusic(0.4);
     refreshMenu();

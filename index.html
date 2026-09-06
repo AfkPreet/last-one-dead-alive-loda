@@ -33,7 +33,7 @@
   <div id="hud" class="layer" aria-hidden="true">
     <div class="hud-top">
       <div class="hud-cell">
-        <div class="hud-label">SOULS BURNING</div>
+        <div class="hud-label">STILL BURNING</div>
         <div class="hud-value" id="hud-alive">12</div>
       </div>
       <div class="hud-cell hud-mid">
@@ -61,8 +61,9 @@
       <div class="logo">
         <div class="logo-l1">LAST ONE</div>
         <div class="logo-l2">DEAD</div>
+        <div class="logo-sub">THE VIGIL</div>
       </div>
-      <p class="tag">Twelve souls. Everybody burns out.<br><b>Win by dying last.</b></p>
+      <p class="tag" id="menu-tag">Twelve lamps. Everybody burns out.<br><b>Carry it to the end of the night.</b></p>
       <button id="btn-play" class="btn btn-primary">ENTER THE DARK</button>
       <div class="seedline">
         <span id="menu-seed">DAILY · DAY 1</span>
@@ -139,6 +140,21 @@
     </div>
   </div>
 
+  <!-- ===================== NAME PROMPT ===================== -->
+  <!-- Shown once: you get a name only by carrying a night to its end. -->
+  <div id="naming" class="layer screen">
+    <div class="stack">
+      <div class="naming-eyebrow">YOU REACHED THE END OF THE NIGHT</div>
+      <h2 class="naming-q">WHAT DO WE CALL YOU?</h2>
+      <input id="name-input" class="nameinput" type="text" maxlength="12"
+             autocomplete="off" autocorrect="off" autocapitalize="characters"
+             spellcheck="false" placeholder="—">
+      <p class="hint">From tonight your name is in the dark with the others.</p>
+      <button id="btn-name-ok" class="btn btn-primary">THAT IS MY NAME</button>
+      <button id="btn-name-skip" class="linkbtn">stay nameless</button>
+    </div>
+  </div>
+
   <!-- ===================== COUNTDOWN / TOAST ===================== -->
   <div id="countdown" class="layer count" aria-hidden="true"></div>
   <div id="toast" class="toast"></div>
@@ -149,6 +165,7 @@
 <script src="js/input.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/juice.js"></script>
+<script src="js/story.js"></script>
 <script src="js/render.js"></script>
 <script src="js/game.js"></script>
 <script src="js/share.js"></script>

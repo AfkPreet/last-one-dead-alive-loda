@@ -120,7 +120,7 @@ async function playTo(page, force) {
     const r = await page.evaluate(() => document.getElementById('res-reveal').innerText);
     await page.screenshot({ path: OUT + '/12-letgo.png' });
     ok('results name the choice', /YOU LET GO/.test(r), r);
-    ok('and still state the rule', /DIE LAST/.test(r), r);
+    ok('and still state the rule', /LAST LAMP/.test(r) || /DIE LAST/.test(r), r);
     // Letting go early cuts the simulation short, so the game does not know who
     // died last and must not say. It still has to give the player a real result.
     const cut = await page.evaluate(() => window.__g.result.cut);
@@ -386,6 +386,9 @@ async function playTo(page, force) {
       setTimeout(() => r({ a, b: document.getElementById('stage').toDataURL().length }), 700);
     }));
     ok('menu is live again after a match, not a frozen dead arena', back.a !== back.b, JSON.stringify(back));
+    await page.waitForTimeout(2500);   // past when the naming prompt would fire
+    const stillMenu = await page.evaluate(() => document.getElementById('menu').classList.contains('show'));
+    ok('no late prompt ambushes the menu', stillMenu, 'a screen took over after navigating away');
     ok('no console errors', page.errors.length === 0, page.errors[0]);
     await page.context().close();
   }

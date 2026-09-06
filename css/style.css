@@ -118,6 +118,10 @@ html, body {
   color: var(--text); text-indent: .06em;
   text-shadow: 0 0 26px rgba(255,45,85,.55), 0 0 70px rgba(123,47,247,.4);
 }
+.logo-sub {
+  font-size: 10.5px; letter-spacing: .52em; color: var(--cyan);
+  text-indent: .52em; margin-top: 9px; opacity: .85;
+}
 .tag { color: var(--dim); font-size: 13.5px; line-height: 1.6; margin: 0 0 4px; }
 .tag b { color: var(--text); }
 
@@ -277,12 +281,32 @@ html, body {
 .coach.show { opacity: 1; }
 .coach em { color: var(--crimson); font-style: normal; }
 
+/* ---------- naming ---------- */
+.naming-eyebrow { font-size: 9.5px; letter-spacing: .28em; color: var(--cyan); }
+.naming-q { font-size: clamp(19px, 6.4vw, 25px); font-weight: 800; letter-spacing: .05em; margin: 2px 0 6px; }
+.nameinput {
+  width: 100%; font: inherit; font-size: 20px; font-weight: 800;
+  letter-spacing: .22em; text-align: center; text-transform: uppercase;
+  color: var(--text); background: rgba(20,15,36,.8);
+  border: 1px solid var(--line); border-radius: 13px; padding: 15px 12px;
+}
+.nameinput:focus { outline: none; border-color: var(--cyan); }
+.nameinput::placeholder { color: #3a3055; letter-spacing: .1em; }
+
 /* ---------- countdown ---------- */
 .count {
   z-index: 15; display: flex; align-items: center; justify-content: center;
-  pointer-events: none; font-size: 88px; font-weight: 800; letter-spacing: .04em;
+  pointer-events: none; padding: 0 26px; text-align: center;
+  font-size: 88px; font-weight: 800; letter-spacing: .04em;
   opacity: 0; text-shadow: 0 0 40px rgba(255,45,85,.6);
 }
+/* The opening rides the countdown, so the same element has to carry a sentence
+   as gracefully as it carries "BURN". */
+.count.line {
+  font-size: clamp(15px, 5vw, 20px); font-weight: 700; letter-spacing: .1em;
+  line-height: 1.75; text-shadow: 0 2px 20px #000, 0 0 34px rgba(0,0,0,.9);
+}
+.count em { color: var(--cyan); font-style: normal; }
 .count.tick { animation: countpop .62s ease-out; }
 @keyframes countpop {
   0%   { opacity: 0; transform: scale(1.7); }
@@ -290,9 +314,18 @@ html, body {
   70%  { opacity: 1; transform: scale(1); }
   100% { opacity: 0; transform: scale(.86); }
 }
+/* Prose has to stay up long enough to read: this holds for the same 2s the
+   countdown beat holds, instead of flashing for a fifth of a second. */
+.count.line.tick { animation: countline 2s ease-out; }
+@keyframes countline {
+  0%   { opacity: 0; transform: translateY(9px); }
+  10%  { opacity: 1; transform: none; }
+  78%  { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-7px); }
+}
 
 /* ---------- results ---------- */
-.reveal { min-height: 132px; display: flex; flex-direction: column; justify-content: center; gap: 7px; }
+.reveal { min-height: 148px; display: flex; flex-direction: column; justify-content: center; gap: 7px; }
 .reveal .r1 {
   font-size: clamp(30px, 10vw, 42px); font-weight: 800; letter-spacing: .04em;
   opacity: 0; animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
@@ -307,6 +340,7 @@ html, body {
   letter-spacing: clamp(.04em, .8vw, .14em);
   text-wrap: balance;
 }
+.reveal .dim { color: var(--dim); font-size: .88em; }
 .reveal .r4 {
   font-size: 12px; color: var(--dim); opacity: 0; font-style: italic; letter-spacing: .02em;
   animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
@@ -349,6 +383,7 @@ html, body {
 
 @media (prefers-reduced-motion: reduce) {
   .count.tick { animation-duration: .3s; }
+  .count.line.tick { animation: none; opacity: 1; }
   .reveal .r1, .reveal .r2, .reveal .r3 { animation-duration: .01s; }
   #hud-phase-label.warn { animation: none; }
 }

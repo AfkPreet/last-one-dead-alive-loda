@@ -13,6 +13,7 @@
     phase: $('hud-phase-label'), bar: $('flamebar-fill'),
     coach: $('coach'), count: $('countdown'), toast: $('toast'),
     menu: $('menu'), how: $('how'), settings: $('settings'), results: $('results'),
+    naming: $('naming'), nameInput: $('name-input'), tag: $('menu-tag'),
     menuSeed: $('menu-seed'), streak: $('streakline'),
     reveal: $('res-reveal'), strip: $('res-strip'), stats: $('res-stats'), shareNote: $('share-note')
   };
@@ -21,6 +22,7 @@
   var renderer = new global.Renderer(surface);
   var input = new global.Input(els.stage);
   var game = null;
+  var ledger = global.Story.load();
   var mode = Store.get('mode', 'daily');
   var challenge = S.parseChallenge();
   var sharePayload = '';               // built at death; the click handler must not compute it
@@ -30,7 +32,7 @@
 
   /* ---------- helpers ---------- */
   function show(name) {
-    ['menu', 'how', 'settings', 'results'].forEach(function (k) {
+    ['menu', 'how', 'settings', 'results', 'naming'].forEach(function (k) {
       els[k].classList.toggle('show', k === name);
     });
     els.hud.classList.toggle('show', name === null);
@@ -128,9 +130,19 @@
       $('btn-mode').textContent = 'switch to daily';
     }
     var bits = [];
-    if (p.streak > 0) bits.push('streak ' + p.streak + (p.best > p.streak ? ' (best ' + p.best + ')' : ''));
-    if (p.plays > 0) bits.push(p.wins + '/' + p.plays + ' died last');
+    if (ledger.you) bits.push('you are ' + ledger.you);
+    if (ledger.chain > 0) bits.push(ledger.chain + ' night' + (ledger.chain === 1 ? '' : 's') + ' carried');
+    else if (ledger.nights > 0) bits.push('carrying ' + (ledger.carrying && ledger.carrying.name ? ledger.carrying.name : 'a stranger'));
+    if (ledger.nights > 0) bits.push(ledger.carried + '/' + ledger.nights + ' to the end');
+    if (p.streak > 1) bits.push('🔥' + p.streak);
     els.streak.textContent = bits.join(' · ');
+
+    // Night one states the rule; after that the tagline names who you hold.
+    if (ledger.nights > 0 && ledger.carrying) {
+      els.tag.innerHTML = 'You are carrying <b>' +
+        (ledger.carrying.name || 'someone with no name left') + '</b>.<br>' +
+        'Carry it to the end of the night.';
+    }
   }
 
   /* ---------- onboarding ---------- */
@@ -207,7 +219,7 @@
     }
   }
 
-  var countdownN = 0, countdownT = 0;
+  var countdownN = 0, countdownT = 0, openingLines = [];
   var seenPickup = false, seenSteal = false, seenDrain = false, warnedOnce = false;
 
   function startMatch() {
@@ -226,6 +238,12 @@
     game.reduced = !settings.shake;
     renderer.contrast = settings.contrast;
     renderer.showNames = settings.names;
+
+    // Name the other eleven from your own ledger: strangers on night one, and
+    // by night ten a field of people you have outlasted, lost to, or dropped.
+    // Purely cosmetic — the arena itself stays identical for everyone.
+    var pool = global.Story.namePool(ledger, new R.Rng(game.seedStr + ':names'), Game.K.SOULS - 1);
+    for (var pi = 1; pi < game.souls.length; pi++) game.souls[pi].name = pool[pi - 1];
 
     // A challenger's soul is renamed after them, but nothing about the
     // simulation changes — the daily has to be identical for everyone or the
@@ -249,8 +267,14 @@
     ghostPassed = false;
 
     global.__g = game; global.__r = renderer; global.__i = input;   // test harness hooks (tools/*.js)
+    // The opening is three lines on the three countdown beats. After a few
+    // nights it collapses to the one line that still matters.
+    openingLines = ledger.nights < 3 ? global.Story.opening(ledger)
+                                     : [global.Story.opening(ledger)[0]];
     show(null);
-    countdownN = 3; countdownT = 0;
+    // Fire the first line on the very first frame rather than after a beat of
+    // dead air.
+    countdownN = openingLines.length; countdownT = 99;
     lastT = performance.now(); acc = 0;
     A.startMusic();
     A.setIntensity(0);
@@ -276,20 +300,23 @@
     // Countdown runs on wall time, before the sim starts.
     if (game.state === 'countdown') {
       countdownT += dt;
-      if (countdownT >= 0.75) {
+      // Prose needs longer on screen than a digit does; the last beat is short.
+      var hold = countdownN > 0 ? 2.0 : 0.7;
+      if (countdownT >= hold) {
         countdownT = 0;
         if (countdownN > 0) {
-          els.count.textContent = countdownN === 0 ? '' : countdownN;
+          var idx = openingLines.length - countdownN;
+          els.count.innerHTML = openingLines[idx] || '';
+          els.count.classList.add('line');
           els.count.classList.remove('tick');
           void els.count.offsetWidth;                 // restart the CSS animation
           els.count.classList.add('tick');
-          A.play('count', 3 - countdownN);
+          A.play('count', idx);
           haptic(12);
           countdownN--;
         } else {
           els.count.textContent = 'BURN';
-          toast('BE THE LAST TO DIE', 2400);
-          els.count.classList.remove('tick');
+          els.count.classList.remove('line', 'tick');
           void els.count.offsetWidth;
           els.count.classList.add('tick');
           A.play('count', 3);
@@ -309,7 +336,7 @@
 
     drainEvents();
     updateHud();
-    pumpCoach(now / 1000);
+    if (game.state !== 'countdown') pumpCoach(now / 1000);
 
     renderer.draw(game, input, now / 1000);
   }
@@ -438,6 +465,10 @@
     cancelAnimationFrame(loopId);
     loopId = requestAnimationFrame(idleFrame);
 
+    // Who you were carrying, whether they reached the end, and who fills you
+    // tomorrow. Reads the run's real numbers; writes the ledger for next time.
+    var night = global.Story.resolveNight(ledger, res, res.standings);
+
     var dayNum = dayNumFor();
     var progress = S.recordDaily(dayNum, res);   // no-ops unless this was today's daily
     // Precompute the share string NOW. Building it inside the click handler
@@ -449,7 +480,7 @@
     coachSeen = Math.min(9, coachSeen + 1);
     Store.set('coached', coachSeen);
 
-    renderReveal(res, progress);
+    renderReveal(res, progress, night);
     show('results');
     // The results panel starts almost transparent so the punchline lands over
     // the arena, on the player's own death bloom, not after a screen wipe.
@@ -458,11 +489,19 @@
     }, res.won ? 3000 : 2200));
     A.play(res.won ? 'win' : 'lose');
     haptic(res.won ? [40, 50, 40, 50, 120] : [120]);
+    if (night && night.askName) {
+      // Only after you have actually carried a night to its end -- and only if
+      // the player is still on the results screen. Otherwise this ambushes
+      // them a second after they have already walked back to the menu.
+      revealTimers.push(setTimeout(function () {
+        if (screen === 'results') show('naming');
+      }, 4600));
+    }
     // The player's own link should carry their run, not the challenger's.
     if (challenge) { S.clearChallengeParams(); challenge = null; }
   }
 
-  function renderReveal(res, progress) {
+  function renderReveal(res, progress, night) {
     els.reveal.className = 'reveal ' + (res.won ? 'win' : 'lose');
     els.reveal.innerHTML = '';
     els.strip.textContent = '';
@@ -482,6 +521,10 @@
       line('r1', 'YOU DIED LAST.', 0);
       line('r2', '…which means you were the last one alive.', 1200);
       line('r3', 'LAST ONE DEAD = LAST ONE ALIVE', 2300);
+      // The pun is the turn; this is the point of it.
+      line('r4', night && night.carriedName
+        ? night.carriedName + ' reached the end of the night in your hands.'
+        : 'It reached the end of the night in your hands.', 3100);
     } else {
       // Never a bare ordinal: "#4" means the opposite here to everywhere else,
       // and one second of "wait, is that good?" at first death loses the player.
@@ -490,12 +533,16 @@
       // remaining order is a guess and stating it as fact would be a lie.
       var winner = (!res.cut && res.standings && res.standings[0]) ? res.standings[0].name : null;
       line('r1', res.letGo ? 'YOU LET GO.' : 'YOU WENT OUT EARLY.', 0);
-      var fact = res.outlasted === 1 ? 'One soul outlasted you.'
-                                     : res.outlasted + ' souls outlasted you.';
-      if (winner) fact += '<br>' + winner + ' died last.';
+      var fact = night && night.carriedName
+        ? night.carriedName + ' went out in your hands.'
+        : 'It went out in your hands.';
+      fact += '<br><span class="dim">' +
+        (res.outlasted === 1 ? 'One lamp outlasted you.'
+                             : res.outlasted + ' lamps outlasted you.') +
+        (winner ? ' ' + winner + ' reached the end.' : '') + '</span>';
       line('r2', fact, 900);
-      line('r3', 'YOU HAD TO DIE <b>LAST</b>', 1700);
-      line('r4', deathLine(res), 2400);
+      line('r3', 'THE NIGHT ENDS WITH THE <b>LAST</b> LAMP', 1800);
+      line('r4', deathLine(res), 2500);
     }
 
     revealTimers.push(setTimeout(function () {
@@ -503,10 +550,12 @@
     }, res.won ? 2500 : 1900));
 
     els.stats.innerHTML =
-      '<div>BURNED FOR<b>' + S.mmss(res.time) + '</b></div>' +
+      '<div>YOU BURNED FOR<b>' + S.mmss(res.time) + '</b></div>' +
       '<div>OUTLASTED YOU<b>' + res.outlasted + ' / ' + (res.total - 1) + '</b></div>' +
-      '<div>FUEL EATEN<b>' + res.eaten + '</b></div>' +
-      '<div>FLAME STOLEN<b>' + res.stolen + '</b></div>';
+      '<div>LIGHT YOU GAVE<b>' + res.gave + '</b></div>' +
+      // The cost of taking, stated plainly. A third of every tear is destroyed
+      // and never becomes light -- this is the number that judges how you won.
+      '<div>LIGHT YOU SPILLED<b>' + res.spilt + '</b></div>';
     els.shareNote.textContent = '';
   }
 
@@ -522,6 +571,7 @@
   /* ---------- input wiring ---------- */
   input.onTap = function () {
     if (screen !== null || !game) return;
+    if (game.state === 'countdown') { countdownN = 0; countdownT = 99; return; }
     if (game.state === 'spectate') { game.skipSpectate(); return; }
     game.dash();
   };
@@ -575,10 +625,24 @@
     btn.addEventListener('click', function (e) { e.stopPropagation(); e.preventDefault(); });
   })();
 
+  function finishNaming(name) {
+    if (name) global.Story.nameYourself(ledger, name);
+    A.play('ui');
+    refreshMenu();
+    show('results');
+    els.results.classList.add('settled');
+  }
+  $('btn-name-ok').addEventListener('click', function () { finishNaming(els.nameInput.value); });
+  $('btn-name-skip').addEventListener('click', function () { finishNaming(null); });
+  els.nameInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); finishNaming(els.nameInput.value); }
+  });
+
   $('btn-play').addEventListener('click', function () { A.unlock(); A.play('ui'); startMatch(); });
   $('btn-again').addEventListener('click', function () { A.play('ui'); startMatch(); });
   $('btn-menu').addEventListener('click', function () {
     A.play('ui');
+    revealTimers.forEach(clearTimeout); revealTimers = [];
     cancelAnimationFrame(loopId);
     A.stopMusic(0.4);
     refreshMenu();
