@@ -101,20 +101,26 @@
   }
 
   /* ---- the message ------------------------------------------------------------ */
-  function buildText(result, dayNum, progress, contrast, ghost) {
+  /** `carried` is the name of whoever's oil you were holding, or null. */
+  function buildText(result, dayNum, progress, contrast, ghost, carried) {
     var L = [];
-    var head = result.mode === 'daily' ? 'LAST ONE DEAD · DAY ' + dayNum
+    var head = result.mode === 'daily' ? 'LAST ONE DEAD · NIGHT ' + dayNum
                                        : 'LAST ONE DEAD · ' + global.RNG.seedToWords(global.RNG.hashString(result.seed));
     L.push(head);
 
+    // Line two carries both halves of the point: the placement, so two people
+    // can compare the same night, and the story, so a stranger asks about it.
     if (result.won) {
       L.push(SKULL + ' #1 / ' + result.total + ' — I died LAST');
-    } else if (result.rank <= 3) {
-      L.push('🔥 #' + result.rank + ' / ' + result.total + ' — so close to dying last');
-    } else if (result.rank >= result.total - 2) {
-      L.push('🔥 #' + result.rank + ' / ' + result.total + ' — burned out immediately');
+      L.push(carried ? carried + ' reached the end of the night in my hands.'
+                     : 'It reached the end of the night in my hands.');
     } else {
-      L.push('🔥 #' + result.rank + ' / ' + result.total + ' — burned out early');
+      var tag = result.rank <= 3 ? 'so close to the end'
+              : result.rank >= result.total - 2 ? 'I went out almost immediately'
+              : 'I went out early';
+      L.push('🔥 #' + result.rank + ' / ' + result.total + ' — ' + tag);
+      L.push(carried ? carried + ' went out in my hands.'
+                     : 'It went out in my hands.');
     }
 
     L.push('');
@@ -122,6 +128,7 @@
     L.push('');
 
     var foot = mmss(result.time) + ' in the dark';
+    if (result.spilt > 0) foot += ' · ' + result.spilt + ' light spilled';
     if (ghost && ghost.name && ghost.time) {
       var diff = result.time - ghost.time;
       foot += diff >= 0 ? ' · outlived ' + ghost.name + ' by ' + mmss(Math.abs(diff))

@@ -129,11 +129,12 @@
       els.menuSeed.textContent = 'ENDLESS · RANDOM ARENA';
       $('btn-mode').textContent = 'switch to daily';
     }
+    // The tagline above already names who you hold, so this line is only your
+    // own record. Kept to one line on a 320px screen.
     var bits = [];
     if (ledger.you) bits.push('you are ' + ledger.you);
-    if (ledger.chain > 0) bits.push(ledger.chain + ' night' + (ledger.chain === 1 ? '' : 's') + ' carried');
-    else if (ledger.nights > 0) bits.push('carrying ' + (ledger.carrying && ledger.carrying.name ? ledger.carrying.name : 'a stranger'));
-    if (ledger.nights > 0) bits.push(ledger.carried + '/' + ledger.nights + ' to the end');
+    if (ledger.nights > 0) bits.push(ledger.carried + '/' + ledger.nights + ' carried');
+    if (ledger.chain > 1) bits.push(ledger.chain + ' in a row');
     if (p.streak > 1) bits.push('🔥' + p.streak);
     els.streak.textContent = bits.join(' · ');
 
@@ -475,7 +476,8 @@
     // would risk losing iOS's transient activation before navigator.share runs.
     S.challengeUrl(res, dayNum);
     global.__sharePayload = sharePayload = S.buildText(res, dayNum, progress, settings.contrast,
-      challenge && challenge.name ? { name: challenge.name, time: challenge.time } : null);
+      challenge && challenge.name ? { name: challenge.name, time: challenge.time } : null,
+      night ? night.carriedName : null);
 
     coachSeen = Math.min(9, coachSeen + 1);
     Store.set('coached', coachSeen);
@@ -550,12 +552,14 @@
     }, res.won ? 2500 : 1900));
 
     els.stats.innerHTML =
-      '<div>YOU BURNED FOR<b>' + S.mmss(res.time) + '</b></div>' +
+      // Labels kept to one line each: a wrapping label makes its tile taller
+      // than the one beside it and the grid stops reading as a grid.
+      '<div>BURNED FOR<b>' + S.mmss(res.time) + '</b></div>' +
       '<div>OUTLASTED YOU<b>' + res.outlasted + ' / ' + (res.total - 1) + '</b></div>' +
-      '<div>LIGHT YOU GAVE<b>' + res.gave + '</b></div>' +
+      '<div>LIGHT GIVEN<b>' + res.gave + '</b></div>' +
       // The cost of taking, stated plainly. A third of every tear is destroyed
       // and never becomes light -- this is the number that judges how you won.
-      '<div>LIGHT YOU SPILLED<b>' + res.spilt + '</b></div>';
+      '<div>LIGHT SPILLED<b>' + res.spilt + '</b></div>';
     els.shareNote.textContent = '';
   }
 

@@ -367,6 +367,8 @@ html, body {
 .stats div {
   background: rgba(20,15,36,.7); border: 1px solid var(--line);
   border-radius: 10px; padding: 9px 10px; text-align: left;
+  display: flex; flex-direction: column; justify-content: space-between;
+  white-space: nowrap;          /* a wrapped label unbalances the row */
 }
 .stats b { display: block; color: var(--text); font-size: 17px; letter-spacing: .02em; margin-top: 2px; }
 

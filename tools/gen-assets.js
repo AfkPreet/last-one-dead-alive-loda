@@ -94,12 +94,16 @@ function makeOG() {
   s.ring(px, py, 20, 2.5, C.cyan, 0.95);
 
   const lx = 78;
-  F.draw(s, 'LAST ONE', lx, 178, 9, C.dim, { spacing: 2 });
-  F.draw(s, 'DEAD', lx, 258, 22, C.text, { spacing: 2 });
-  s.rect(lx, 420, 372, 3, C.ember, 0.85);
-  F.draw(s, 'TWELVE SOULS.', lx, 452, 4.4, C.dim, { spacing: 1 });
-  F.draw(s, 'EVERYBODY BURNS OUT.', lx, 492, 4.4, C.dim, { spacing: 1 });
-  F.draw(s, 'WIN BY DYING LAST.', lx, 534, 5.4, C.hot, { spacing: 1 });
+  // Glyphs are 7 rows tall, so a line at y with scale k occupies y .. y+7k.
+  // Laid out explicitly to keep DEAD (7*22 = 154px tall) clear of the subtitle.
+  F.draw(s, 'LAST ONE', lx, 130, 9, C.dim, { spacing: 2 });      // 130..193
+  F.draw(s, 'DEAD', lx, 205, 22, C.text, { spacing: 2 });         // 205..359
+  F.draw(s, 'THE VIGIL', lx, 380, 4.6, C.cyan, { spacing: 5 });   // 380..412
+  s.rect(lx, 440, 372, 3, C.ember, 0.85);
+  F.draw(s, 'THE OIL IN YOURS', lx, 466, 4.4, C.dim, { spacing: 1 });
+  F.draw(s, 'IS NOT YOURS.', lx, 502, 4.4, C.dim, { spacing: 1 });
+  F.draw(s, 'GET IT TO THE END', lx, 546, 4.8, C.hot, { spacing: 1 });
+  F.draw(s, 'OF THE NIGHT.', lx, 586, 4.8, C.hot, { spacing: 1 });  // ..620
   return s;
 }
 

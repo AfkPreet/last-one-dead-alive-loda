@@ -156,7 +156,7 @@ console.log('\nSHARE TEXT');
   const res = g.result;
   const text = Share.buildText(res, 62, { streak: 4 }, false, null);
   const lines = text.split('\n');
-  ok('line 1 names the game and the day', /^LAST ONE DEAD · DAY 62$/.test(lines[0]), lines[0]);
+  ok('line 1 names the game and the night', /^LAST ONE DEAD · NIGHT 62$/.test(lines[0]), lines[0]);
   ok('line 2 carries the placement', /#\d+ \/ 12/.test(lines[1]), lines[1]);
   ok('last line is the challenge url', /^https?:\/\//.test(lines[lines.length - 1]), lines[lines.length - 1]);
   ok('url carries the day and the result', /[?&]d=62/.test(text) && /[&]t=\d+/.test(text));
@@ -165,6 +165,18 @@ console.log('\nSHARE TEXT');
   ok('no vulgarity from the repo slug leaks into the share', !/loda/i.test(text));
   const won = Object.assign({}, res, { rank: 1, won: true });
   ok('a win says it died last', /died LAST/.test(Share.buildText(won, 62, {}, false, null)));
+  // The share must carry the story as well as the placement, or it is a score
+  // with nothing in it for a stranger to ask about.
+  ok('a win names who reached the end in your hands',
+    /MARA reached the end of the night in my hands\./.test(Share.buildText(won, 62, {}, false, null, 'MARA')));
+  // The base run may itself be a win, so state the loss explicitly.
+  const lost = Object.assign({}, res, { rank: 7, won: false, outlasted: 6 });
+  ok('a loss names who went out in your hands',
+    /MARA went out in my hands\./.test(Share.buildText(lost, 62, {}, false, null, 'MARA')));
+  ok('with no one to name it still reads',
+    /It went out in my hands\./.test(Share.buildText(lost, 62, {}, false, null, null)));
+  ok('spilled light is reported when there was any',
+    /light spilled/.test(Share.buildText(Object.assign({}, res, { spilt: 31 }), 62, {}, false, null, 'MARA')));
   const ghost = Share.buildText(won, 62, {}, false, { name: 'PRT', time: res.time - 10 });
   ok('a challenge run reports the comparison', /outlived PRT/.test(ghost), ghost);
 }
