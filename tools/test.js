@@ -103,6 +103,28 @@ console.log('\nLET GO');
   ok('a second letGo is a no-op', g.letGo() === false);
 }
 
+console.log('\nUNOBSERVED PLACEMENTS ARE FLAGGED');
+{
+  // Dying early stops the simulation after a few seconds of spectating, so the
+  // order of everyone still burning is an estimate. The result has to say so,
+  // or the results screen reports a guess as fact.
+  const g = new Game({ seed: 'cut', mode: 'daily' });
+  g.startPlay();
+  for (let i = 0; i < 120; i++) g.update(1 / 60, { x: 1, y: 0, mag: 1 });
+  g.letGo();
+  ok('letting go early leaves souls burning', g.aliveCount > 0, 'alive=' + g.aliveCount);
+  g.skipSpectate();
+  ok('the result flags that the match was cut short', g.result.cut === true);
+  // The player's OWN placement is observed, not guessed: it is the number of
+  // souls still burning at the moment they went out.
+  ok('and the player\'s own placement is still exact',
+    g.result.outlasted === g.result.rank - 1, JSON.stringify({ r: g.result.rank, o: g.result.outlasted }));
+
+  const full = runMatch('cut');
+  ok('a match played to the end is not flagged', full.result.cut === false, String(full.result.cut));
+  ok('and does name a soul that died last', !!full.result.standings[0].name);
+}
+
 console.log('\nBURNLINE ENCODING');
 {
   const B = Share.burnline;

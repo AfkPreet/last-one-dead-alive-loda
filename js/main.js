@@ -476,7 +476,10 @@
     } else {
       // Never a bare ordinal: "#4" means the opposite here to everywhere else,
       // and one second of "wait, is that good?" at first death loses the player.
-      var winner = (res.standings && res.standings[0]) ? res.standings[0].name : null;
+      // Only name who died last if the match actually played out. When you go
+      // out early we stop simulating after a few seconds of spectating, so the
+      // remaining order is a guess and stating it as fact would be a lie.
+      var winner = (!res.cut && res.standings && res.standings[0]) ? res.standings[0].name : null;
       line('r1', res.letGo ? 'YOU LET GO.' : 'YOU WENT OUT EARLY.', 0);
       var fact = res.outlasted === 1 ? 'One soul outlasted you.'
                                      : res.outlasted + ' souls outlasted you.';

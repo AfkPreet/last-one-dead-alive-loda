@@ -747,7 +747,8 @@
     if (this.state === 'done') return;
     this.state = 'done';
     var p = this.player;
-    // Anyone still burning when we cut away is ranked by how much they had left.
+    // Anyone still burning when we cut away is ranked by how much flame they had
+    // left. That is a guess, not an observation — see `cut` below.
     var stragglers = this.souls.filter(function (s) { return s.alive; })
       .sort(function (a, b) { return a.flame - b.flame; });
     for (var i = 0; i < stragglers.length; i++) {
@@ -761,6 +762,11 @@
       total: K.SOULS,
       time: p.diedAt || this.t,
       matchTime: this.t,
+      // True when the match was still running when we stopped simulating it.
+      // The placements of everyone still burning are then estimates, so the
+      // results screen must not report who died last as though it watched.
+      // (Read from stragglers: by now they have all been marked dead above.)
+      cut: stragglers.length > 0,
       eaten: p.eaten,
       stolen: Math.round(p.stolen),
       peak: Math.round(p.peak),

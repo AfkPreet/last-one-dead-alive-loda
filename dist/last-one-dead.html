@@ -2599,7 +2599,8 @@ html, body {
     if (this.state === 'done') return;
     this.state = 'done';
     var p = this.player;
-    // Anyone still burning when we cut away is ranked by how much they had left.
+    // Anyone still burning when we cut away is ranked by how much flame they had
+    // left. That is a guess, not an observation \u2014 see `cut` below.
     var stragglers = this.souls.filter(function (s) { return s.alive; })
       .sort(function (a, b) { return a.flame - b.flame; });
     for (var i = 0; i < stragglers.length; i++) {
@@ -2613,6 +2614,11 @@ html, body {
       total: K.SOULS,
       time: p.diedAt || this.t,
       matchTime: this.t,
+      // True when the match was still running when we stopped simulating it.
+      // The placements of everyone still burning are then estimates, so the
+      // results screen must not report who died last as though it watched.
+      // (Read from stragglers: by now they have all been marked dead above.)
+      cut: stragglers.length > 0,
       eaten: p.eaten,
       stolen: Math.round(p.stolen),
       peak: Math.round(p.peak),
@@ -3433,7 +3439,10 @@ html, body {
     } else {
       // Never a bare ordinal: "#4" means the opposite here to everywhere else,
       // and one second of "wait, is that good?" at first death loses the player.
-      var winner = (res.standings && res.standings[0]) ? res.standings[0].name : null;
+      // Only name who died last if the match actually played out. When you go
+      // out early we stop simulating after a few seconds of spectating, so the
+      // remaining order is a guess and stating it as fact would be a lie.
+      var winner = (!res.cut && res.standings && res.standings[0]) ? res.standings[0].name : null;
       line('r1', res.letGo ? 'YOU LET GO.' : 'YOU WENT OUT EARLY.', 0);
       var fact = res.outlasted === 1 ? 'One soul outlasted you.'
                                      : res.outlasted + ' souls outlasted you.';

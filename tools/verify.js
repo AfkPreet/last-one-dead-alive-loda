@@ -79,6 +79,8 @@ async function playTo(page, force) {
     }));
     await page.screenshot({ path: OUT + '/11-win-reveal-full.png' });
     ok('second line delivers the identity', /last one alive/i.test(late.reveal), late.reveal);
+    ok('a match played to the end is not flagged as cut',
+      (await page.evaluate(() => window.__g.result.cut)) === false);
     ok('third line states the equation', /LAST ONE DEAD = LAST ONE ALIVE/.test(late.reveal));
     ok('panel settles after the reveal', late.settled);
     ok('result is a win at rank 1', late.won && late.rank === 1, JSON.stringify(late));
@@ -119,8 +121,12 @@ async function playTo(page, force) {
     await page.screenshot({ path: OUT + '/12-letgo.png' });
     ok('results name the choice', /YOU LET GO/.test(r), r);
     ok('and still state the rule', /DIE LAST/.test(r), r);
-    ok('results name who actually died last', /died last/i.test(r), r);
-    ok('a deadpan sign-off is shown', r.trim().split('\n').length >= 4, r);
+    // Letting go early cuts the simulation short, so the game does not know who
+    // died last and must not say. It still has to give the player a real result.
+    const cut = await page.evaluate(() => window.__g.result.cut);
+    ok('the cut-short match is flagged as such', cut === true, String(cut));
+    ok('and the results do NOT claim who died last', !/died last/i.test(r), r);
+    ok('a deadpan sign-off is still shown', r.trim().split('\n').length >= 3, r);
     ok('no console errors', page.errors.length === 0, page.errors[0]);
     await page.context().close();
   }
