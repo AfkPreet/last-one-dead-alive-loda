@@ -47,14 +47,16 @@ html, body {
   margin: auto;
   width: 100%;
   height: 100%;
-  max-width: min(100vw, 56svh);          /* never wider than a tall phone */
+  /* A portrait column, but never a slot: on a short landscape screen
+     56svh collapsed this to ~200px and the menu became unusable. */
+  max-width: min(100vw, max(330px, 56svh));
   max-height: 100svh;
   background: var(--void);
   overflow: hidden;
   isolation: isolate;
 }
 @supports not (height: 100svh) {
-  #frame { max-width: min(100vw, 56vh); max-height: 100vh; }
+  #frame { max-width: min(100vw, max(330px, 56vh)); max-height: 100vh; }
 }
 
 #stage {
@@ -102,14 +104,19 @@ html, body {
   max-width: 380px;
   display: flex; flex-direction: column; align-items: center; gap: 16px;
   text-align: center;
-}
-.screen .stack.scroll {
+  /* Every screen scrolls. On a short landscape viewport the menu was 552px of
+     content in a 360px window with no way to reach ENTER THE DARK. */
   max-height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   touch-action: pan-y;
 }
+/* Flex centring collapses the top of an overflowing column; auto margins on the
+   children keep it centred when it fits and scrollable when it does not. */
+.screen .stack > :first-child { margin-top: auto; }
+.screen .stack > :last-child { margin-bottom: auto; }
+
 
 /* ---------- title ---------- */
 .logo { line-height: .92; margin-bottom: 2px; }
@@ -277,12 +284,20 @@ html, body {
 #flamebar-fill { height: 100%; width: 50%; border-radius: 4px; transition: background .2s linear; }
 
 .coach {
-  position: absolute; left: 16px; right: 16px; top: 34%;
+  position: absolute; left: 0; right: 0; top: 32%;
   text-align: center; font-size: 15px; font-weight: 700; letter-spacing: .12em;
-  line-height: 1.6; opacity: 0; transition: opacity .3s ease; pointer-events: none;
-  text-shadow: 0 2px 18px #000;
+  line-height: 1.6; opacity: 0; pointer-events: none;
+  padding: 12px 18px;
+  /* The teal ring is the only way to find yourself among twelve dots, so the
+     teaching text must never sit on it unreadably. A scrim guarantees contrast
+     and the .low variant moves the line to the half the player is not in. */
+  background: linear-gradient(90deg, rgba(7,6,13,0) 0%, rgba(7,6,13,.86) 14%,
+                                     rgba(7,6,13,.86) 86%, rgba(7,6,13,0) 100%);
+  text-shadow: 0 2px 14px #000;
+  transition: opacity .3s ease, top .35s ease;
 }
 .coach.show { opacity: 1; }
+.coach.low { top: 63%; }
 .coach em { color: var(--crimson); font-style: normal; }
 
 /* ---------- naming ---------- */
@@ -353,16 +368,21 @@ html, body {
 .win .r1 { color: var(--hot); text-shadow: 0 0 34px rgba(255,243,176,.5); }
 .lose .r1 { color: var(--text); }
 
-.strip {
-  /* A grid: rows left-aligned to each other, the block itself centred, and
-     sized so ten cells clear a 320px screen. */
-  display: inline-block;
-  text-align: left;
-  font-size: clamp(14px, 5.2vw, 19px);
-  letter-spacing: clamp(0.5px, 0.4vw, 1.5px);
-  line-height: 1.3;
-  white-space: pre;
-  max-width: 100%;
+.strip { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; }
+.strip-cap { font-size: 9.5px; letter-spacing: .2em; color: var(--dim); }
+.strip-rows { display: flex; flex-direction: column; gap: 3px; }
+.strip-row { display: flex; gap: 3px; }
+.strip-cell {
+  width: clamp(15px, 4.6vw, 21px); aspect-ratio: 1; border-radius: 3px;
+  background: #241f38; border: 1px solid rgba(255,255,255,.05);
+}
+.strip-cell.spent {
+  /* The night carried on without you: absence, not a dark flame. */
+  background: none; border: 1px dashed rgba(154,144,184,.22);
+}
+.strip-cell.end {
+  background: none; border: 0; display: flex; align-items: center;
+  justify-content: center; font-size: clamp(13px, 4vw, 18px);
 }
 .stats {
   display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%;
@@ -3080,6 +3100,28 @@ html, body {
     return rows.join('\n');
   }
 
+  /** The same sampling the emoji burnline uses, but as data so the results
+   *  screen can draw real cells instead of relying on emoji rendering.
+   *  Always at least MIN_CELLS long, so a very short run still reads as a
+   *  strip rather than a single skull floating in space. */
+  var MIN_CELLS = 6;
+  function burnCells(samples, deathTime) {
+    var out = [];
+    var total = Math.max(1, Math.ceil(deathTime / CELL_SECONDS));
+    for (var i = 0; i < total && i < MAX_CELLS; i++) {
+      var t0 = i * CELL_SECONDS, t1 = t0 + CELL_SECONDS, peak = 0;
+      for (var j = 0; j < samples.length; j++) {
+        var s = samples[j];
+        if (s[0] >= t0 && s[0] < t1) peak = Math.max(peak, s[1]);
+      }
+      out.push({ v: peak, end: false });
+    }
+    if (!out.length) out.push({ v: 0, end: false });
+    out[out.length - 1] = { v: 0, end: true };
+    while (out.length < MIN_CELLS) out.push({ v: 0, end: false, spent: true });
+    return out;
+  }
+
   function mmss(sec) {
     var m = Math.floor(sec / 60), s = Math.floor(sec % 60);
     return m + ':' + (s < 10 ? '0' : '') + s;
@@ -3253,6 +3295,7 @@ html, body {
 
   global.Share = {
     burnline: burnline,
+    burnCells: burnCells,
     buildText: buildText,
     challengeUrl: function (r, d) { challengeUrlCache = challengeUrl(r, d); return challengeUrlCache; },
     share: share,
@@ -3426,8 +3469,13 @@ html, body {
     // Tell the renderer which band of the screen the coach line is occupying so
     // soul name labels get out of its way.
     if (els.coach.classList.contains('show')) {
-      var cb = els.coach.getBoundingClientRect();
       var fb = els.frame.getBoundingClientRect();
+      // Put the line in the half the player is not in.
+      if (game && game.player && game.player.alive) {
+        var py = renderer.toScreenY(game.player.y);
+        els.coach.classList.toggle('low', py < fb.height * 0.5);
+      }
+      var cb = els.coach.getBoundingClientRect();
       renderer.coachBand = [cb.top - fb.top - 6, cb.bottom - fb.top + 6];
     } else {
       renderer.coachBand = null;
@@ -3732,6 +3780,9 @@ html, body {
   /* ---------- results ---------- */
   function onFinished(res) {
     lastResult = res;
+    // A match toast landing on the results copy reads as a layout bug.
+    clearTimeout(toastT);
+    els.toast.classList.remove('show');
     A.stopMusic(0.8);
     cancelAnimationFrame(loopId);
     loopId = requestAnimationFrame(idleFrame);
@@ -3818,7 +3869,7 @@ html, body {
     }
 
     revealTimers.push(setTimeout(function () {
-      els.strip.textContent = S.burnline(res.samples, res.time, settings.contrast);
+      renderStrip(res);
     }, res.won ? 2500 : 1900));
 
     els.stats.innerHTML =
@@ -3831,6 +3882,32 @@ html, body {
       // and never becomes light -- this is the number that judges how you won.
       '<div>LIGHT SPILLED<b>' + res.spilt + '</b></div>';
     els.shareNote.textContent = '';
+  }
+
+  /* The share text is emoji because it has to paste into a group chat. On
+   * screen we can do better: real cells on the flame ramp, so the unlit ones
+   * read as burnt down rather than as missing glyphs. */
+  function renderStrip(res) {
+    var cells = S.burnCells(res.samples, res.time);
+    var html = '<div class="strip-cap">YOUR FLAME, EVERY ' + S.CELL_SECONDS + ' SECONDS</div><div class="strip-rows">';
+    for (var i = 0; i < cells.length; i += 10) {
+      html += '<div class="strip-row">';
+      var row = cells.slice(i, i + 10);
+      for (var j = 0; j < row.length; j++) {
+        var c = row[j];
+        if (c.end) {
+          html += '<div class="strip-cell end">\ud83d\udc80</div>';
+        } else if (c.spent) {
+          html += '<div class="strip-cell spent"></div>';
+        } else {
+          var col = global.Juice.rampHex(Game.FLAME_RAMP, c.v / 100, 10);
+          // Unlit cells keep a visible body so the strip reads as a strip.
+          html += '<div class="strip-cell" style="background:' + (c.v < 6 ? '#241f38' : col) + '"></div>';
+        }
+      }
+      html += '</div>';
+    }
+    els.strip.innerHTML = html + '</div>';
   }
 
   /* Keep rendering the frozen arena behind the results screen. */

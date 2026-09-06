@@ -156,8 +156,13 @@
     // Tell the renderer which band of the screen the coach line is occupying so
     // soul name labels get out of its way.
     if (els.coach.classList.contains('show')) {
-      var cb = els.coach.getBoundingClientRect();
       var fb = els.frame.getBoundingClientRect();
+      // Put the line in the half the player is not in.
+      if (game && game.player && game.player.alive) {
+        var py = renderer.toScreenY(game.player.y);
+        els.coach.classList.toggle('low', py < fb.height * 0.5);
+      }
+      var cb = els.coach.getBoundingClientRect();
       renderer.coachBand = [cb.top - fb.top - 6, cb.bottom - fb.top + 6];
     } else {
       renderer.coachBand = null;
@@ -462,6 +467,9 @@
   /* ---------- results ---------- */
   function onFinished(res) {
     lastResult = res;
+    // A match toast landing on the results copy reads as a layout bug.
+    clearTimeout(toastT);
+    els.toast.classList.remove('show');
     A.stopMusic(0.8);
     cancelAnimationFrame(loopId);
     loopId = requestAnimationFrame(idleFrame);
@@ -548,7 +556,7 @@
     }
 
     revealTimers.push(setTimeout(function () {
-      els.strip.textContent = S.burnline(res.samples, res.time, settings.contrast);
+      renderStrip(res);
     }, res.won ? 2500 : 1900));
 
     els.stats.innerHTML =
@@ -561,6 +569,32 @@
       // and never becomes light -- this is the number that judges how you won.
       '<div>LIGHT SPILLED<b>' + res.spilt + '</b></div>';
     els.shareNote.textContent = '';
+  }
+
+  /* The share text is emoji because it has to paste into a group chat. On
+   * screen we can do better: real cells on the flame ramp, so the unlit ones
+   * read as burnt down rather than as missing glyphs. */
+  function renderStrip(res) {
+    var cells = S.burnCells(res.samples, res.time);
+    var html = '<div class="strip-cap">YOUR FLAME, EVERY ' + S.CELL_SECONDS + ' SECONDS</div><div class="strip-rows">';
+    for (var i = 0; i < cells.length; i += 10) {
+      html += '<div class="strip-row">';
+      var row = cells.slice(i, i + 10);
+      for (var j = 0; j < row.length; j++) {
+        var c = row[j];
+        if (c.end) {
+          html += '<div class="strip-cell end">💀</div>';
+        } else if (c.spent) {
+          html += '<div class="strip-cell spent"></div>';
+        } else {
+          var col = global.Juice.rampHex(Game.FLAME_RAMP, c.v / 100, 10);
+          // Unlit cells keep a visible body so the strip reads as a strip.
+          html += '<div class="strip-cell" style="background:' + (c.v < 6 ? '#241f38' : col) + '"></div>';
+        }
+      }
+      html += '</div>';
+    }
+    els.strip.innerHTML = html + '</div>';
   }
 
   /* Keep rendering the frozen arena behind the results screen. */

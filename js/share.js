@@ -75,6 +75,28 @@
     return rows.join('\n');
   }
 
+  /** The same sampling the emoji burnline uses, but as data so the results
+   *  screen can draw real cells instead of relying on emoji rendering.
+   *  Always at least MIN_CELLS long, so a very short run still reads as a
+   *  strip rather than a single skull floating in space. */
+  var MIN_CELLS = 6;
+  function burnCells(samples, deathTime) {
+    var out = [];
+    var total = Math.max(1, Math.ceil(deathTime / CELL_SECONDS));
+    for (var i = 0; i < total && i < MAX_CELLS; i++) {
+      var t0 = i * CELL_SECONDS, t1 = t0 + CELL_SECONDS, peak = 0;
+      for (var j = 0; j < samples.length; j++) {
+        var s = samples[j];
+        if (s[0] >= t0 && s[0] < t1) peak = Math.max(peak, s[1]);
+      }
+      out.push({ v: peak, end: false });
+    }
+    if (!out.length) out.push({ v: 0, end: false });
+    out[out.length - 1] = { v: 0, end: true };
+    while (out.length < MIN_CELLS) out.push({ v: 0, end: false, spent: true });
+    return out;
+  }
+
   function mmss(sec) {
     var m = Math.floor(sec / 60), s = Math.floor(sec % 60);
     return m + ':' + (s < 10 ? '0' : '') + s;
@@ -248,6 +270,7 @@
 
   global.Share = {
     burnline: burnline,
+    burnCells: burnCells,
     buildText: buildText,
     challengeUrl: function (r, d) { challengeUrlCache = challengeUrl(r, d); return challengeUrlCache; },
     share: share,
