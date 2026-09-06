@@ -731,6 +731,7 @@ html, body {
     this._startX = 0; this._startY = 0;
     this._moved = 0;
     this._keys = Object.create(null);
+    this._spare = [];        // other fingers on the glass, newest last
 
     this._bind();
   }
@@ -744,12 +745,9 @@ html, body {
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     }
 
-    function down(e) {
-      if (!self.enabled) return;
-      if (self._id !== null) return;              // first finger wins; ignore the rest
-      if (e.pointerType === 'mouse' && e.button !== 0) return;
-      self._id = e.pointerId;
-      var p = local(e);
+    /** Make this pointer the one steering, anchoring the stick at `p`. */
+    function grab(id, p) {
+      self._id = id;
       self.originX = self._startX = p.x;
       self.originY = self._startY = p.y;
       self.knobX = p.x; self.knobY = p.y;
@@ -757,12 +755,39 @@ html, body {
       self._startT = performance.now();
       self._moved = 0;
       self.x = self.y = self.mag = 0;
+    }
+    function forget(id) {
+      for (var i = self._spare.length - 1; i >= 0; i--) {
+        if (self._spare[i].id === id) self._spare.splice(i, 1);
+      }
+    }
+
+    function down(e) {
+      if (!self.enabled) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (self._id !== null) {
+        // A second finger doesn't steal the stick, but it is remembered: if the
+        // first one lifts while this one is still down, it takes over instead
+        // of leaving the player pressing a dead screen.
+        forget(e.pointerId);
+        self._spare.push({ id: e.pointerId, p: local(e) });
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+      grab(e.pointerId, local(e));
       if (el.setPointerCapture) { try { el.setPointerCapture(e.pointerId); } catch (err) {} }
       e.preventDefault();
     }
 
     function move(e) {
-      if (self._id !== e.pointerId) return;
+      if (self._id !== e.pointerId) {
+        // Keep spare fingers' positions fresh so a handoff starts where the
+        // finger actually is, not where it first landed.
+        for (var i = 0; i < self._spare.length; i++) {
+          if (self._spare[i].id === e.pointerId) { self._spare[i].p = local(e); break; }
+        }
+        return;
+      }
       var p = local(e);
       var dx = p.x - self.originX, dy = p.y - self.originY;
       var d = Math.hypot(dx, dy);
@@ -796,11 +821,13 @@ html, body {
       self.touching = false;
       self.active = false;
       self.x = self.y = self.mag = 0;
+      var next = self._spare.pop();
+      if (next) grab(next.id, next.p);     // hand the stick to the finger still down
       if (e && e.cancelable) e.preventDefault();
     }
 
     function up(e) {
-      if (self._id !== e.pointerId) return;
+      if (self._id !== e.pointerId) { forget(e.pointerId); return; }
       var dt = performance.now() - self._startT;
       var wasTap = dt <= TAP_MS && self._moved <= TAP_R;
       release(e);
@@ -811,7 +838,7 @@ html, body {
      * gesture, a call, the page being hidden). It is not a tap, so it must not
      * fire a dash. */
     function cancel(e) {
-      if (self._id !== e.pointerId) return;
+      if (self._id !== e.pointerId) { forget(e.pointerId); return; }
       release(e);
     }
 
@@ -820,7 +847,7 @@ html, body {
     el.addEventListener('pointerup', up, opts);
     el.addEventListener('pointercancel', cancel, opts);
     el.addEventListener('lostpointercapture', function (e) {
-      if (self._id === e.pointerId) { self._id = null; self.touching = false; self.active = false; self.mag = 0; }
+      if (self._id === e.pointerId) release(null);
     });
     // Belt and braces against iOS gestures that pointer events don't cover.
     el.addEventListener('touchstart', function (e) { if (e.cancelable) e.preventDefault(); }, opts);
@@ -839,6 +866,7 @@ html, body {
     });
     global.addEventListener('blur', function () {
       self._keys = Object.create(null);
+      self._spare.length = 0;
       self._id = null; self.touching = false; self.active = false; self.mag = 0; self.x = self.y = 0;
     });
   };
@@ -857,7 +885,7 @@ html, body {
   };
 
   Input.prototype.reset = function () {
-    this._id = null; this._keys = Object.create(null);
+    this._id = null; this._keys = Object.create(null); this._spare.length = 0;
     this.touching = this.active = false;
     this.x = this.y = this.mag = 0;
   };
@@ -1554,6 +1582,7 @@ html, body {
     ctx.restore();
 
     this._drawRingEdge(ctx, game, cx, cy, ringPx, ringPy, tSec);
+    this._drawOffscreenPlayer(ctx, game, cw, ch, tSec);
     if (input && input.touching) this._drawStick(ctx, input);
     this._drawVignette(ctx, cw, ch, game);
   };
@@ -1658,7 +1687,6 @@ html, body {
         ctx.lineWidth = 0.5;
         ctx.stroke();
       }
-      ctx.restore();
     }
     ctx.restore();
   };
@@ -1768,6 +1796,46 @@ html, body {
     ctx.beginPath(); ctx.arc(kx, ky, 15, 0, TAU); ctx.fill();
     ctx.fillStyle = 'rgba(0,245,212,.75)';
     ctx.beginPath(); ctx.arc(kx, ky, 5.5, 0, TAU); ctx.fill();
+    ctx.restore();
+  };
+
+  /* The camera closes in with the light but never follows, so a player who
+   * flees into the dark at high zoom can be projected clean off the canvas \u2014
+   * alive, steerable and invisible. Pin a marker to the edge instead of moving
+   * the camera, which would fight the shake pivot and the ring's composition.
+   * Sets this.marker so tests can assert it without reading pixels. */
+  Renderer.prototype._drawOffscreenPlayer = function (ctx, game, cw, ch, t) {
+    this.marker = null;
+    var p = game.player;
+    if (!p || !p.alive) return;
+    var m = 20;
+    var x = this.toScreenX(p.x), y = this.toScreenY(p.y);
+    if (x >= m && x <= cw - m && y >= m && y <= ch - m) return;
+
+    var cx = cw / 2, cy = ch / 2;
+    var dx = x - cx, dy = y - cy;
+    var d = Math.hypot(dx, dy) || 1;
+    // Push out to whichever edge the direction hits first.
+    var sx = (cw / 2 - m) / Math.max(1e-6, Math.abs(dx));
+    var sy = (ch / 2 - m) / Math.max(1e-6, Math.abs(dy));
+    var k = Math.min(sx, sy);
+    var mx = cx + dx * k, my = cy + dy * k;
+    this.marker = { x: mx, y: my };
+
+    var col = p.color();
+    var pulse = 0.65 + 0.35 * Math.sin(t * 7);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    J.drawGlow(ctx, mx, my, 26 * pulse, col, 0.6);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.rotate(Math.atan2(dy, dx));
+    ctx.beginPath();
+    ctx.moveTo(9, 0); ctx.lineTo(-6, -7); ctx.lineTo(-6, 7);
+    ctx.closePath();
+    ctx.fillStyle = col; ctx.fill();
+    ctx.strokeStyle = '#00f5d4'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.restore();
   };
 
@@ -3070,7 +3138,11 @@ html, body {
 
     var capped = p10 > 28;                 // the device is pacing at ~30fps by choice
     var struggling = capped ? p70 > 42 : p70 > 21;
-    var comfortable = capped ? p70 < 36 : p70 < 13;
+    // Climb-back must be unreachable at the device's own floor, or the ladder
+    // oscillates: a capped device that legitimately stepped down sits at 33.3ms,
+    // which would read as headroom, and it would bounce up and down forever.
+    // A 30fps-paced device simply cannot report headroom through this signal.
+    var comfortable = !capped && p70 < 13;
 
     if (struggling && qIndex < QUALITY_STEPS.length - 1) {
       qIndex++;
@@ -3124,7 +3196,7 @@ html, body {
     els.coach.classList.remove('show');
     ghostPassed = false;
 
-    global.__g = game; global.__r = renderer;   // test harness hooks (tools/*.js)
+    global.__g = game; global.__r = renderer; global.__i = input;   // test harness hooks (tools/*.js)
     show(null);
     countdownN = 3; countdownT = 0;
     lastT = performance.now(); acc = 0;

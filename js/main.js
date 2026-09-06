@@ -181,7 +181,11 @@
 
     var capped = p10 > 28;                 // the device is pacing at ~30fps by choice
     var struggling = capped ? p70 > 42 : p70 > 21;
-    var comfortable = capped ? p70 < 36 : p70 < 13;
+    // Climb-back must be unreachable at the device's own floor, or the ladder
+    // oscillates: a capped device that legitimately stepped down sits at 33.3ms,
+    // which would read as headroom, and it would bounce up and down forever.
+    // A 30fps-paced device simply cannot report headroom through this signal.
+    var comfortable = !capped && p70 < 13;
 
     if (struggling && qIndex < QUALITY_STEPS.length - 1) {
       qIndex++;
@@ -235,7 +239,7 @@
     els.coach.classList.remove('show');
     ghostPassed = false;
 
-    global.__g = game; global.__r = renderer;   // test harness hooks (tools/*.js)
+    global.__g = game; global.__r = renderer; global.__i = input;   // test harness hooks (tools/*.js)
     show(null);
     countdownN = 3; countdownT = 0;
     lastT = performance.now(); acc = 0;

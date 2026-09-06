@@ -230,6 +230,135 @@ async function playTo(page, force) {
     await ctx.close();
   }
 
+  /* ---------- 6a. the renderer leaves the canvas as it found it ---------- */
+  console.log('\nCANVAS STATE');
+  {
+    const page = await newPage(browser, Object.assign({}, devices['iPhone 12'], { hasTouch: true, isMobile: true }));
+    await page.goto(BASE, { waitUntil: 'networkidle' });
+    await playTo(page);
+    await page.waitForTimeout(2500);          // let embers, particles and text all exist
+    const r = await page.evaluate(() => {
+      const ctx = document.getElementById('stage').getContext('2d');
+      const realSave = ctx.save.bind(ctx), realRestore = ctx.restore.bind(ctx);
+      let depth = 0, min = 0, saves = 0;
+      ctx.save = function () { depth++; saves++; realSave(); };
+      ctx.restore = function () { depth--; if (depth < min) min = depth; realRestore(); };
+      const scene = { embers: window.__g.embers.length, particles: window.__g.fx.n, text: window.__g.txt.n };
+      window.__r.draw(window.__g, null, performance.now() / 1000);
+      const out = { depth, min, saves, scene,
+        alpha: ctx.globalAlpha, composite: ctx.globalCompositeOperation };
+      ctx.save = realSave; ctx.restore = realRestore;
+      return out;
+    });
+    ok('the scene under test actually has embers to draw', r.scene.embers > 0, JSON.stringify(r.scene));
+    ok('draw() ends with the state stack where it started', r.depth === 0, JSON.stringify(r));
+    // A stray restore() can net out to zero while still popping a caller's
+    // state mid-frame, which is how the ember transform bug hid: it only showed
+    // once more than one ember was on screen.
+    ok('and never pops below its own baseline', r.min === 0, JSON.stringify(r));
+    ok('globalAlpha is left at 1', r.alpha === 1, String(r.alpha));
+    ok('composite mode is left at source-over', r.composite === 'source-over', r.composite);
+    ok('no console errors', page.errors.length === 0, page.errors[0]);
+    await page.context().close();
+  }
+
+  /* ---------- 6a-2. a live player is never invisible ---------- */
+  console.log('\nOFF-SCREEN PLAYER');
+  {
+    const page = await newPage(browser, Object.assign({}, devices['iPhone 12'], { hasTouch: true, isMobile: true }));
+    await page.goto(BASE, { waitUntil: 'networkidle' });
+    await playTo(page);
+    await page.waitForTimeout(1200);
+    const r = await page.evaluate(() => {
+      const g = window.__g, R = window.__r;
+      const draw = () => R.draw(g, null, performance.now() / 1000);
+      const out = {};
+      // Centre of the arena: no marker wanted.
+      g.player.x = 50; g.player.y = g.worldH / 2;
+      draw(); out.centred = R.marker;
+      // Deep in the void at maximum zoom — the case the camera cannot show.
+      g.ringR = 9.5; R.zoom = 2.15;
+      g.player.x = 96; g.player.y = g.worldH / 2;
+      draw();
+      out.far = R.marker;
+      out.canvas = { w: R.s.w, h: R.s.h };
+      out.projected = { x: R.toScreenX(g.player.x), y: R.toScreenY(g.player.y) };
+      // Dead players get no marker.
+      g.player.alive = false; draw(); out.dead = R.marker;
+      return out;
+    });
+    ok('no marker while the player is on screen', r.centred === null, JSON.stringify(r.centred));
+    ok('the player really would be off-canvas out there',
+      r.projected.x > r.canvas.w || r.projected.x < 0, JSON.stringify(r.projected));
+    ok('an off-screen player gets an edge marker', !!r.far, JSON.stringify(r));
+    ok('and the marker is inside the canvas',
+      r.far && r.far.x >= 0 && r.far.x <= r.canvas.w && r.far.y >= 0 && r.far.y <= r.canvas.h,
+      JSON.stringify(r.far) + ' canvas ' + JSON.stringify(r.canvas));
+    ok('a dead player gets no marker', r.dead === null, JSON.stringify(r.dead));
+    ok('no console errors', page.errors.length === 0, page.errors[0]);
+    await page.context().close();
+  }
+
+  /* ---------- 6b. multi-touch handoff ---------- */
+  console.log('\nMULTI-TOUCH');
+  {
+    const page = await newPage(browser, Object.assign({}, devices['iPhone 12'], { hasTouch: true, isMobile: true }));
+    await page.goto(BASE, { waitUntil: 'networkidle' });
+    await playTo(page);
+    // Real touch events through CDP, not synthetic PointerEvents: only real
+    // ones get proper pointer-capture semantics, and capture is exactly what
+    // this handoff has to survive.
+    const cdp = await page.context().newCDPSession(page);
+    const box = await page.locator('#stage').boundingBox();
+    const P = (x, y, id) => ({ x: box.x + x, y: box.y + y, id });
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+    const snap = () => page.evaluate(() => ({
+      touching: window.__i.touching, mag: +window.__i.mag.toFixed(3),
+      originX: Math.round(window.__i.originX), spare: window.__i._spare.length
+    }));
+
+    await touch('touchStart', [P(100, 400, 1)]);
+    await touch('touchMove', [P(150, 400, 1)]);
+    const a = await snap();
+    ok('the first finger steers', a.touching && a.mag > 0, JSON.stringify(a));
+
+    await touch('touchStart', [P(150, 400, 1), P(260, 520, 2)]);
+    const b2 = await snap();
+    ok('a second finger does not steal the stick', b2.originX < 200 && b2.spare === 1, JSON.stringify(b2));
+
+    // CDP touchEnd takes the point being RELEASED, not the ones that remain.
+    await touch('touchEnd', [P(150, 400, 1)]);       // finger 1 lifts, 2 remains
+    const c = await snap();
+    ok('lifting the first hands the stick to the second', c.touching, JSON.stringify(c));
+    ok('and re-anchors where that finger actually is', Math.abs(c.originX - 260) < 40, JSON.stringify(c));
+
+    await touch('touchMove', [P(320, 520, 2)]);
+    const d = await snap();
+    ok('the second finger then steers', d.mag > 0, JSON.stringify(d));
+
+    // And the simulation must actually respond. Every other test here drives
+    // the game with the mouse, which is exactly how a completely dead
+    // touch joystick once got through this suite.
+    const before = await page.evaluate(() => ({ x: window.__g.player.x, y: window.__g.player.y }));
+    for (let i = 0; i < 12; i++) {
+      await touch('touchMove', [P(320 + (i % 2 ? 4 : -4), 520, 2)]);
+      await page.waitForTimeout(50);
+    }
+    const after = await page.evaluate(() => ({
+      x: window.__g.player.x, y: window.__g.player.y,
+      v: Math.hypot(window.__g.player.vx, window.__g.player.vy)
+    }));
+    ok('touch input actually moves the player',
+      after.v > 1 && Math.hypot(after.x - before.x, after.y - before.y) > 1,
+      JSON.stringify({ before, after }));
+
+    await touch('touchEnd', [P(320, 520, 2)]);
+    const e2 = await snap();
+    ok('lifting the last finger releases everything', !e2.touching && e2.mag === 0, JSON.stringify(e2));
+    ok('no console errors', page.errors.length === 0, page.errors[0]);
+    await page.context().close();
+  }
+
   /* ---------- 7. the menu is alive again after a match ---------- */
   console.log('\nMENU PREVIEW');
   {

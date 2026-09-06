@@ -142,6 +142,7 @@
     ctx.restore();
 
     this._drawRingEdge(ctx, game, cx, cy, ringPx, ringPy, tSec);
+    this._drawOffscreenPlayer(ctx, game, cw, ch, tSec);
     if (input && input.touching) this._drawStick(ctx, input);
     this._drawVignette(ctx, cw, ch, game);
   };
@@ -246,7 +247,6 @@
         ctx.lineWidth = 0.5;
         ctx.stroke();
       }
-      ctx.restore();
     }
     ctx.restore();
   };
@@ -356,6 +356,46 @@
     ctx.beginPath(); ctx.arc(kx, ky, 15, 0, TAU); ctx.fill();
     ctx.fillStyle = 'rgba(0,245,212,.75)';
     ctx.beginPath(); ctx.arc(kx, ky, 5.5, 0, TAU); ctx.fill();
+    ctx.restore();
+  };
+
+  /* The camera closes in with the light but never follows, so a player who
+   * flees into the dark at high zoom can be projected clean off the canvas —
+   * alive, steerable and invisible. Pin a marker to the edge instead of moving
+   * the camera, which would fight the shake pivot and the ring's composition.
+   * Sets this.marker so tests can assert it without reading pixels. */
+  Renderer.prototype._drawOffscreenPlayer = function (ctx, game, cw, ch, t) {
+    this.marker = null;
+    var p = game.player;
+    if (!p || !p.alive) return;
+    var m = 20;
+    var x = this.toScreenX(p.x), y = this.toScreenY(p.y);
+    if (x >= m && x <= cw - m && y >= m && y <= ch - m) return;
+
+    var cx = cw / 2, cy = ch / 2;
+    var dx = x - cx, dy = y - cy;
+    var d = Math.hypot(dx, dy) || 1;
+    // Push out to whichever edge the direction hits first.
+    var sx = (cw / 2 - m) / Math.max(1e-6, Math.abs(dx));
+    var sy = (ch / 2 - m) / Math.max(1e-6, Math.abs(dy));
+    var k = Math.min(sx, sy);
+    var mx = cx + dx * k, my = cy + dy * k;
+    this.marker = { x: mx, y: my };
+
+    var col = p.color();
+    var pulse = 0.65 + 0.35 * Math.sin(t * 7);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    J.drawGlow(ctx, mx, my, 26 * pulse, col, 0.6);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.rotate(Math.atan2(dy, dx));
+    ctx.beginPath();
+    ctx.moveTo(9, 0); ctx.lineTo(-6, -7); ctx.lineTo(-6, 7);
+    ctx.closePath();
+    ctx.fillStyle = col; ctx.fill();
+    ctx.strokeStyle = '#00f5d4'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.restore();
   };
 

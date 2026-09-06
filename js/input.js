@@ -30,6 +30,7 @@
     this._startX = 0; this._startY = 0;
     this._moved = 0;
     this._keys = Object.create(null);
+    this._spare = [];        // other fingers on the glass, newest last
 
     this._bind();
   }
@@ -43,12 +44,9 @@
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     }
 
-    function down(e) {
-      if (!self.enabled) return;
-      if (self._id !== null) return;              // first finger wins; ignore the rest
-      if (e.pointerType === 'mouse' && e.button !== 0) return;
-      self._id = e.pointerId;
-      var p = local(e);
+    /** Make this pointer the one steering, anchoring the stick at `p`. */
+    function grab(id, p) {
+      self._id = id;
       self.originX = self._startX = p.x;
       self.originY = self._startY = p.y;
       self.knobX = p.x; self.knobY = p.y;
@@ -56,12 +54,39 @@
       self._startT = performance.now();
       self._moved = 0;
       self.x = self.y = self.mag = 0;
+    }
+    function forget(id) {
+      for (var i = self._spare.length - 1; i >= 0; i--) {
+        if (self._spare[i].id === id) self._spare.splice(i, 1);
+      }
+    }
+
+    function down(e) {
+      if (!self.enabled) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (self._id !== null) {
+        // A second finger doesn't steal the stick, but it is remembered: if the
+        // first one lifts while this one is still down, it takes over instead
+        // of leaving the player pressing a dead screen.
+        forget(e.pointerId);
+        self._spare.push({ id: e.pointerId, p: local(e) });
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+      grab(e.pointerId, local(e));
       if (el.setPointerCapture) { try { el.setPointerCapture(e.pointerId); } catch (err) {} }
       e.preventDefault();
     }
 
     function move(e) {
-      if (self._id !== e.pointerId) return;
+      if (self._id !== e.pointerId) {
+        // Keep spare fingers' positions fresh so a handoff starts where the
+        // finger actually is, not where it first landed.
+        for (var i = 0; i < self._spare.length; i++) {
+          if (self._spare[i].id === e.pointerId) { self._spare[i].p = local(e); break; }
+        }
+        return;
+      }
       var p = local(e);
       var dx = p.x - self.originX, dy = p.y - self.originY;
       var d = Math.hypot(dx, dy);
@@ -95,11 +120,13 @@
       self.touching = false;
       self.active = false;
       self.x = self.y = self.mag = 0;
+      var next = self._spare.pop();
+      if (next) grab(next.id, next.p);     // hand the stick to the finger still down
       if (e && e.cancelable) e.preventDefault();
     }
 
     function up(e) {
-      if (self._id !== e.pointerId) return;
+      if (self._id !== e.pointerId) { forget(e.pointerId); return; }
       var dt = performance.now() - self._startT;
       var wasTap = dt <= TAP_MS && self._moved <= TAP_R;
       release(e);
@@ -110,7 +137,7 @@
      * gesture, a call, the page being hidden). It is not a tap, so it must not
      * fire a dash. */
     function cancel(e) {
-      if (self._id !== e.pointerId) return;
+      if (self._id !== e.pointerId) { forget(e.pointerId); return; }
       release(e);
     }
 
@@ -119,7 +146,7 @@
     el.addEventListener('pointerup', up, opts);
     el.addEventListener('pointercancel', cancel, opts);
     el.addEventListener('lostpointercapture', function (e) {
-      if (self._id === e.pointerId) { self._id = null; self.touching = false; self.active = false; self.mag = 0; }
+      if (self._id === e.pointerId) release(null);
     });
     // Belt and braces against iOS gestures that pointer events don't cover.
     el.addEventListener('touchstart', function (e) { if (e.cancelable) e.preventDefault(); }, opts);
@@ -138,6 +165,7 @@
     });
     global.addEventListener('blur', function () {
       self._keys = Object.create(null);
+      self._spare.length = 0;
       self._id = null; self.touching = false; self.active = false; self.mag = 0; self.x = self.y = 0;
     });
   };
@@ -156,7 +184,7 @@
   };
 
   Input.prototype.reset = function () {
-    this._id = null; this._keys = Object.create(null);
+    this._id = null; this._keys = Object.create(null); this._spare.length = 0;
     this.touching = this.active = false;
     this.x = this.y = this.mag = 0;
   };
