@@ -107,8 +107,8 @@ code by `node tools/gen-assets.js`, so the repo ships nothing it cannot rebuild.
 ### Tools
 
 ```sh
-node tools/test.js            # 51 headless assertions: determinism, ranking, share encoding
-node tools/verify.js          # 34 browser checks in Chromium: win reveal, LET GO, links, perf
+node tools/test.js            # 69 headless assertions: determinism, ranking, share encoding
+node tools/verify.js          # 62 browser checks in Chromium: win reveal, LET GO, touch, canvas, perf
 node tools/sim.js 200         # play 200 AI-only matches, report pacing
 node tools/tune.js 140 60     # search the pacing constants against a cost function
 node tools/gen-assets.js      # regenerate icons and the Open Graph card
@@ -139,6 +139,14 @@ topped up and lasted 0.1 seconds instead of three; and the ember *quota* was
 decorative, because one spawn per timer tick meant the standing stock could never
 exceed what the bots ate — the arena had roughly one ember visible at a time when
 it was supposed to have nine.
+
+An adversarial review pass over the finished game raised 37 findings, refuted 30
+of them, and confirmed 7 — all fixed. The worst two were invisible from the
+outside: `?d=` challenge links replayed a *different* arena than the daily they
+named, which quietly broke the entire share loop; and one unbalanced
+`ctx.restore()` meant every ember after the first was drawn in the corner of the
+screen in the wrong coordinate space, in a game whose whole loop is "run at the
+fuel". There are regression tests for both.
 
 ### A correction worth recording
 
