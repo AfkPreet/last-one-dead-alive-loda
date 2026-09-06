@@ -521,7 +521,9 @@
         s.think -= dt;
         if (s.think <= 0) { s.think = s.w.react; this._steerBot(s, dt); }
       } else if (s.isPlayer) {
-        if (this.state === 'play' && input && input.mag > 0) {
+        // Control is kept through the finale: the win is the player performing
+        // their own death, not the engine performing it for them.
+        if ((this.state === 'play' || this.state === 'finale') && input && input.mag > 0) {
           s.dx = input.x; s.dy = input.y;
           s.throttle = input.mag;
         } else {
@@ -752,6 +754,7 @@
       stragglers[i].alive = false;
       stragglers[i].rank = stragglers.length - i;
       stragglers[i].diedAt = this.t;
+      this.aliveCount--;                 // keep the counter honest to the end
     }
     this.result = {
       rank: p.rank || 1,
@@ -802,7 +805,7 @@
   /** Returns true if the dash fired. Costs flame, so it is never free speed. */
   Game.prototype.dash = function () {
     var s = this.player;
-    if (!s.alive || this.state !== 'play') return false;
+    if (!s.alive || (this.state !== 'play' && this.state !== 'finale')) return false;
     if (s.dashCd > 0 || s.dashT > 0) return false;
     if (s.flame < K.DASH_MIN_FLAME) { this.emit('dashFail'); return false; }
     var dx = s.dx, dy = s.dy;

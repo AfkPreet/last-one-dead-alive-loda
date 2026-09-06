@@ -104,7 +104,7 @@
   function seedFor(m) {
     if (challenge) {
       if (challenge.seed) return challenge.seed;
-      if (challenge.day) return 'LOD-DAY-' + challenge.day;
+      if (challenge.day) return R.seedForDay(challenge.day);   // same arena as that day's daily
     }
     if (m === 'daily') return R.dailySeedString();
     return 'E-' + R.dayNumber() + '-' + Math.floor(performance.now() * 1000 % 1e9).toString(36);
@@ -157,28 +157,49 @@
    * down only, with a long window and hysteresis, so it never oscillates. */
   var QUALITY_STEPS = [1, 0.8, 0.65, 0.5];
   var qIndex = 0, qSamples = [], qCooldown = 0;
+
+  /* Adaptive resolution. Frame cost here is almost entirely fill rate, so on a
+   * device that can't hold its own refresh rate the right lever is pixels.
+   *
+   * The signal is the frame interval, not time measured around renderer.draw():
+   * Canvas2D commands are queued, so the draw call returns long before the
+   * rasterisation it caused is finished, and timing it underestimates badly.
+   *
+   * The interval alone is ambiguous, though — a phone in low-power mode paces
+   * rAF at 30fps while rendering perfectly happily, and reading that as load
+   * would throw away half the resolution for nothing. So compare the typical
+   * frame against the *best* frame: the fastest frames approximate the device's
+   * own cadence, and only a gap between the two means we are the bottleneck. */
   function adaptQuality(frameMs, now) {
     if (now < qCooldown) return;
     qSamples.push(frameMs);
     if (qSamples.length < 90) return;
     qSamples.sort(function (a, b) { return a - b; });
-    var p70 = qSamples[Math.floor(qSamples.length * 0.7)];
+    var p10 = qSamples[Math.floor(qSamples.length * 0.10)];   // ~ the device's cadence
+    var p70 = qSamples[Math.floor(qSamples.length * 0.70)];   // ~ what we actually deliver
     qSamples.length = 0;
-    if (p70 > 23 && qIndex < QUALITY_STEPS.length - 1) {
+
+    var capped = p10 > 28;                 // the device is pacing at ~30fps by choice
+    var struggling = capped ? p70 > 42 : p70 > 21;
+    var comfortable = capped ? p70 < 36 : p70 < 13;
+
+    if (struggling && qIndex < QUALITY_STEPS.length - 1) {
       qIndex++;
       surface.setQuality(QUALITY_STEPS[qIndex]);
-      qCooldown = now + 4000;          // let it settle before judging again
-    } else if (p70 < 11 && qIndex > 0) {
+      qCooldown = now + 3000;              // let it settle before judging again
+    } else if (comfortable && qIndex > 0) {
       qIndex--;
       surface.setQuality(QUALITY_STEPS[qIndex]);
-      qCooldown = now + 8000;          // climb back reluctantly
+      qCooldown = now + 8000;              // climb back reluctantly
     }
   }
+
   var countdownN = 0, countdownT = 0;
   var seenPickup = false, seenSteal = false, seenDrain = false, warnedOnce = false;
 
   function startMatch() {
     A.unlock();
+    stopPreview();
     cancelAnimationFrame(loopId);
     revealTimers.forEach(clearTimeout); revealTimers = [];
 
@@ -232,7 +253,7 @@
     var dt = frameMs / 1000;
     lastT = now;
     if (dt > MAX_FRAME) dt = MAX_FRAME;          // a backgrounded tab must not fast-forward the match
-    else adaptQuality(frameMs, now);             // ignore stalls; they aren't render cost
+    else adaptQuality(frameMs, now);             // stalls aren't render cost; skip them
     acc += dt;
 
     // Countdown runs on wall time, before the sim starts.
@@ -272,6 +293,7 @@
     drainEvents();
     updateHud();
     pumpCoach(now / 1000);
+
     renderer.draw(game, input, now / 1000);
   }
 
@@ -400,7 +422,7 @@
     loopId = requestAnimationFrame(idleFrame);
 
     var dayNum = dayNumFor();
-    var progress = (res.mode === 'daily') ? S.recordDaily(dayNum, res) : S.loadProgress();
+    var progress = S.recordDaily(dayNum, res);   // no-ops unless this was today's daily
     // Precompute the share string NOW. Building it inside the click handler
     // would risk losing iOS's transient activation before navigator.share runs.
     S.challengeUrl(res, dayNum);
@@ -506,6 +528,12 @@
       if (!game || screen !== null) return;
       if (game.state === 'spectate') { game.skipSpectate(); return; }
       if (!game.player.alive) return;
+      // Touch pointers are implicitly captured by their target, so pointerleave
+      // never fires and sliding off would not abort. Release the capture and
+      // track the bounds ourselves.
+      if (btn.hasPointerCapture && btn.hasPointerCapture(e.pointerId)) {
+        try { btn.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
       armed = true;
       btn.classList.add('arming');
       haptic(8);
@@ -513,6 +541,13 @@
         cancel();
         if (game && game.letGo()) { A.play('death'); haptic([140, 60, 40]); }
       }, 600);
+    });
+    btn.addEventListener('pointermove', function (e) {
+      if (!armed) return;
+      var r = btn.getBoundingClientRect();
+      var out = e.clientX < r.left - 8 || e.clientX > r.right + 8 ||
+                e.clientY < r.top - 8 || e.clientY > r.bottom + 8;
+      if (out) cancel();                 // slid off: changed your mind
     });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) {
       btn.addEventListener(ev, function (e) { if (armed) { e.stopPropagation(); } cancel(); });
@@ -523,12 +558,17 @@
   $('btn-play').addEventListener('click', function () { A.unlock(); A.play('ui'); startMatch(); });
   $('btn-again').addEventListener('click', function () { A.play('ui'); startMatch(); });
   $('btn-menu').addEventListener('click', function () {
-    A.play('ui'); cancelAnimationFrame(loopId); refreshMenu(); show('menu');
+    A.play('ui');
+    cancelAnimationFrame(loopId);
+    A.stopMusic(0.4);
+    refreshMenu();
+    show('menu');
+    startPreview();
   });
   $('btn-how').addEventListener('click', function () { A.play('ui'); show('how'); });
-  $('btn-how-back').addEventListener('click', function () { A.play('ui'); show('menu'); });
+  $('btn-how-back').addEventListener('click', function () { A.play('ui'); show('menu'); startPreview(); });
   $('btn-settings').addEventListener('click', function () { A.play('ui'); show('settings'); });
-  $('btn-settings-back').addEventListener('click', function () { A.play('ui'); applySettings(); show('menu'); });
+  $('btn-settings-back').addEventListener('click', function () { A.play('ui'); applySettings(); show('menu'); startPreview(); });
   $('btn-mode').addEventListener('click', function () {
     A.play('ui');
     if (challenge) { challenge = null; S.clearChallengeParams(); }
@@ -558,7 +598,11 @@
   });
   P.onVisible(function () {
     lastT = performance.now(); acc = 0;      // don't integrate the time we were away
-    if (settings.sound) A.resume();
+    if (!settings.sound) return;
+    A.resume();
+    // suspend() stops the scheduler, so resuming the context is not enough —
+    // without this the match plays out in silence after the first app switch.
+    if (game && screen === null && game.state !== 'done') A.startMusic();
   });
   surface.onResize = function () {
     // Mid-match the world stays as dealt; a resize must not change the arena.
@@ -578,21 +622,34 @@
   applySettings();
   refreshMenu();
   show('menu');
+
   if (challenge) toast(challenge.name ? (challenge.name + ' CHALLENGED YOU') : 'CHALLENGE ARENA LOADED', 2600);
 
-  // A still frame of an idle arena behind the title screen.
-  (function preview() {
-    var g = new Game({ seed: 'menu-preview', mode: 'endless', auto: true });
-    g.reduced = false;
-    g.startPlay();
-    var t0 = performance.now();
-    (function tick(now) {
-      if (screen !== 'menu') return;
-      requestAnimationFrame(tick);
-      if (g.state === 'done') { g = new Game({ seed: 'menu-' + (now | 0), mode: 'endless', auto: true }); g.startPlay(); }
-      g.update(1 / 60, null);
-      g.events.length = 0;
-      renderer.draw(g, null, (now - t0) / 1000);
-    })(t0);
-  })();
+  /* A live match idling behind the title screen. Restarted every time we return
+   * to the menu — otherwise the menu sits on the frozen last frame of the match
+   * you just lost. */
+  var previewId = 0, previewGame = null, previewT0 = 0, previewN = 0;
+  function startPreview() {
+    cancelAnimationFrame(previewId);
+    previewGame = new Game({ seed: 'menu-' + (previewN++), mode: 'endless', auto: true });
+    previewGame.startPlay();
+    previewT0 = performance.now();
+    previewId = requestAnimationFrame(function tick(now) {
+      if (screen !== 'menu') { previewId = 0; return; }
+      previewId = requestAnimationFrame(tick);
+      if (previewGame.state === 'done') {
+        previewGame = new Game({ seed: 'menu-' + (previewN++), mode: 'endless', auto: true });
+        previewGame.startPlay();
+      }
+      previewGame.update(1 / 60, null);
+      previewGame.events.length = 0;      // the menu is silent; drop them
+      renderer.draw(previewGame, null, (now - previewT0) / 1000);
+    });
+  }
+  function stopPreview() {
+    cancelAnimationFrame(previewId);
+    previewId = 0;
+  }
+
+  startPreview();
 })(typeof self !== 'undefined' ? self : this);

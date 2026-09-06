@@ -90,21 +90,34 @@
       e.preventDefault();
     }
 
-    function up(e) {
-      if (self._id !== e.pointerId) return;
-      var dt = performance.now() - self._startT;
+    function release(e) {
       self._id = null;
       self.touching = false;
       self.active = false;
       self.x = self.y = self.mag = 0;
-      if (dt <= TAP_MS && self._moved <= TAP_R && self.onTap) self.onTap(self._startX, self._startY);
-      if (e.cancelable) e.preventDefault();
+      if (e && e.cancelable) e.preventDefault();
+    }
+
+    function up(e) {
+      if (self._id !== e.pointerId) return;
+      var dt = performance.now() - self._startT;
+      var wasTap = dt <= TAP_MS && self._moved <= TAP_R;
+      release(e);
+      if (wasTap && self.onTap) self.onTap(self._startX, self._startY);
+    }
+
+    /* A cancelled pointer is the system taking the gesture away (a system
+     * gesture, a call, the page being hidden). It is not a tap, so it must not
+     * fire a dash. */
+    function cancel(e) {
+      if (self._id !== e.pointerId) return;
+      release(e);
     }
 
     el.addEventListener('pointerdown', down, opts);
     el.addEventListener('pointermove', move, opts);
     el.addEventListener('pointerup', up, opts);
-    el.addEventListener('pointercancel', up, opts);
+    el.addEventListener('pointercancel', cancel, opts);
     el.addEventListener('lostpointercapture', function (e) {
       if (self._id === e.pointerId) { self._id = null; self.touching = false; self.active = false; self.mag = 0; }
     });

@@ -140,8 +140,18 @@ async function playTo(page, force) {
     await playTo(page);
     const named = await page.evaluate(() => window.__g.souls.filter(s => s.name === 'PRT').length);
     ok('exactly one soul carries the challenger name', named === 1, 'found ' + named);
-    const seedUsed = await page.evaluate(() => window.__g.seedStr);
-    ok('the challenge arena uses the challenger day-seed', seedUsed === 'LOD-DAY-200', seedUsed);
+    // The invariant that matters: a ?d=N link must play the SAME arena as day
+    // N's daily, or every shared score is meaningless.
+    const seedCheck = await page.evaluate(() => ({
+      used: window.__g.seedStr,
+      expected: window.RNG.seedForDay(200),
+      todayDaily: window.RNG.dailySeedString(),
+      todayViaDay: window.RNG.seedForDay(window.RNG.dayNumber())
+    }));
+    ok('a ?d=N link plays exactly day N\'s arena',
+      seedCheck.used === seedCheck.expected, JSON.stringify(seedCheck));
+    ok('the daily seed and the day-number seed are the same derivation',
+      seedCheck.todayDaily === seedCheck.todayViaDay, JSON.stringify(seedCheck));
     // Outliving the challenger's recorded time must be announced.
     await page.evaluate(() => { window.__g.t = 31; });
     await page.waitForTimeout(400);
@@ -220,7 +230,32 @@ async function playTo(page, force) {
     await ctx.close();
   }
 
-  /* ---------- 7. frame pacing ---------- */
+  /* ---------- 7. the menu is alive again after a match ---------- */
+  console.log('\nMENU PREVIEW');
+  {
+    const page = await newPage(browser, Object.assign({}, devices['iPhone 12'], { hasTouch: true, isMobile: true }));
+    await page.goto(BASE, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const boot = await page.evaluate(() => new Promise(r => {
+      const a = document.getElementById('stage').toDataURL().length;
+      setTimeout(() => r({ a, b: document.getElementById('stage').toDataURL().length }), 700);
+    }));
+    ok('title screen renders a live arena', boot.a !== boot.b, JSON.stringify(boot));
+    await playTo(page, 'win');
+    await page.waitForSelector('#results.show', { timeout: 30000 });
+    await page.waitForTimeout(3400);
+    await page.click('#btn-menu');
+    await page.waitForTimeout(700);
+    const back = await page.evaluate(() => new Promise(r => {
+      const a = document.getElementById('stage').toDataURL().length;
+      setTimeout(() => r({ a, b: document.getElementById('stage').toDataURL().length }), 700);
+    }));
+    ok('menu is live again after a match, not a frozen dead arena', back.a !== back.b, JSON.stringify(back));
+    ok('no console errors', page.errors.length === 0, page.errors[0]);
+    await page.context().close();
+  }
+
+  /* ---------- 8. frame pacing ---------- */
   console.log('\nFRAME PACING');
   {
     const page = await newPage(browser, Object.assign({}, devices['iPhone 12'], { hasTouch: true, isMobile: true }));
@@ -229,13 +264,26 @@ async function playTo(page, force) {
     await page.evaluate(() => {
       window.__frames = [];
       let last = performance.now();
-      (function tick() {
+      // Sample late, after the quality ladder has had time to settle.
+      setTimeout(() => (function tick() {
         const n = performance.now();
         window.__frames.push(n - last); last = n;
-        if (window.__frames.length < 400) requestAnimationFrame(tick);
-      })();
+        if (window.__frames.length < 300) requestAnimationFrame(tick);
+      })(), 9000);
     });
-    await page.waitForTimeout(8000);
+    await page.waitForTimeout(13000);
+    const q = await page.evaluate(() => ({
+      quality: window.__r.s.quality,
+      backing: window.__r.s.canvas.width + 'x' + window.__r.s.canvas.height,
+      draw: (function () { const t = performance.now();
+        for (let i = 0; i < 30; i++) window.__r.draw(window.__g, null, performance.now() / 1000);
+        return (performance.now() - t) / 30; })()
+    }));
+    console.log('    adaptive quality settled at ' + q.quality + ' (' + q.backing + '), draw ' + q.draw.toFixed(1) + 'ms');
+    // Under swiftshader the renderer genuinely cannot hold 60fps at full res, so
+    // the ladder must engage. On real hardware it stays at 1.
+    ok('adaptive resolution engages when the GPU cannot keep up', q.quality < 1, 'quality=' + q.quality);
+    ok('and it stops stepping down once draw is affordable', q.draw < 16, q.draw.toFixed(1) + 'ms');
     const f = await page.evaluate(() => window.__frames.slice(5));
     const sorted = f.slice().sort((a, b) => a - b);
     const p50 = sorted[sorted.length >> 1], p95 = sorted[Math.floor(sorted.length * 0.95)];

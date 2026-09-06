@@ -96,6 +96,11 @@
     localDateKey: localDateKey,
     dayNumber: dayNumber,
     msUntilNextLocalMidnight: msUntilNextLocalMidnight,
-    dailySeedString: function (d) { return 'LOD-' + localDateKey(d); }
+    /* Keyed on the day NUMBER, not the date string, so seedForDay(n) below can
+     * reproduce it exactly from a shared ?d=n link. These two must never drift
+     * apart: if they do, a challenge link silently plays a different arena than
+     * the daily it claims to be. */
+    dailySeedString: function (d) { return 'LOD-D' + dayNumber(d); },
+    seedForDay: function (n) { return 'LOD-D' + n; }
   };
 })(typeof self !== "undefined" ? self : this);

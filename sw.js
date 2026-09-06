@@ -39,8 +39,12 @@ self.addEventListener('fetch', function (e) {
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req).then(function (res) {
-        var copy = res.clone();
-        caches.open(CACHE).then(function (c) { c.put('./index.html', copy); });
+        // Only cache a real page: a 404 or a redirect to one must not become
+        // the offline shell.
+        if (res && res.ok && res.status === 200) {
+          var copy = res.clone();
+          caches.open(CACHE).then(function (c) { c.put('./index.html', copy); });
+        }
         return res;
       })['catch'](function () {
         return caches.match('./index.html').then(function (r) { return r || caches.match('./'); });
@@ -49,15 +53,19 @@ self.addEventListener('fetch', function (e) {
     return;
   }
 
+  // Stale-while-revalidate: answer instantly from cache, but always refresh it
+  // in the background. Plain cache-first pins the first build a visitor ever
+  // loaded, so a deploy would never reach anyone who had opened the game once.
   e.respondWith(
     caches.match(req).then(function (hit) {
-      return hit || fetch(req).then(function (res) {
+      var network = fetch(req).then(function (res) {
         if (res && res.status === 200 && res.type === 'basic') {
           var copy = res.clone();
           caches.open(CACHE).then(function (c) { c.put(req, copy); });
         }
         return res;
-      });
-    })['catch'](function () { return caches.match('./index.html'); })
+      })['catch'](function () { return hit; });
+      return hit || network;
+    })
   );
 });

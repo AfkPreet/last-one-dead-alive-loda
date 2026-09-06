@@ -150,6 +150,7 @@
   function Particles(max) {
     this.max = max || 480;
     this.n = 0;
+    this.cursor = 0;                 // round-robin recycle index when full
     this.p = new Array(this.max);
     for (var i = 0; i < this.max; i++) {
       this.p[i] = { x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1, r: 1, color: '#fff', drag: 0.9, glow: false, grav: 0, spin: 0, rot: 0, shape: 0 };
@@ -157,8 +158,14 @@
   }
   Particles.prototype.spawn = function (o) {
     var q;
-    if (this.n < this.max) { q = this.p[this.n++]; }
-    else { q = this.p[(Math.abs(o.x | 0) + this.n) % this.max]; }   // recycle oldest-ish under pressure
+    if (this.n < this.max) {
+      q = this.p[this.n++];
+    } else {
+      // Full: recycle round-robin so a burst at one spot can't keep stomping
+      // the same slot and render as a single particle.
+      q = this.p[this.cursor];
+      this.cursor = (this.cursor + 1) % this.max;
+    }
     q.x = o.x; q.y = o.y; q.vx = o.vx || 0; q.vy = o.vy || 0;
     q.life = q.max = o.life || 0.5;
     q.r = o.r || 2; q.color = o.color || '#fff';
@@ -231,15 +238,21 @@
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = prev;
   };
-  Particles.prototype.clear = function () { this.n = 0; };
+  Particles.prototype.clear = function () { this.n = 0; this.cursor = 0; };
 
   /* ---- floating text --------------------------------------------------------- */
   function FloatText(max) {
-    this.max = max || 24; this.n = 0; this.p = new Array(this.max);
+    this.max = max || 24; this.n = 0; this.cursor = 0; this.p = new Array(this.max);
     for (var i = 0; i < this.max; i++) this.p[i] = { x: 0, y: 0, vy: 0, life: 0, maxL: 1, text: '', color: '#fff', size: 12 };
   }
   FloatText.prototype.add = function (x, y, text, color, size) {
-    var q = this.n < this.max ? this.p[this.n++] : this.p[0];
+    var q;
+    if (this.n < this.max) {
+      q = this.p[this.n++];
+    } else {
+      q = this.p[this.cursor];
+      this.cursor = (this.cursor + 1) % this.max;
+    }
     q.x = x; q.y = y; q.vy = -34; q.life = q.maxL = 0.9;
     q.text = text; q.color = color || '#fff'; q.size = size || 13;
   };
@@ -268,7 +281,7 @@
     }
     ctx.globalAlpha = 1;
   };
-  FloatText.prototype.clear = function () { this.n = 0; };
+  FloatText.prototype.clear = function () { this.n = 0; this.cursor = 0; };
 
   global.Juice = {
     Ease: Ease, Camera: Camera, Hitstop: Hitstop,

@@ -161,6 +161,68 @@ console.log('\nCHALLENGE LINKS');
   ok('unrelated params -> no challenge', Share.parseChallenge() === null);
 }
 
+console.log('\nCHALLENGE LINKS REPLAY THE SAME ARENA');
+{
+  // The bug this guards: the daily used a date-string seed while ?d=N rebuilt a
+  // different one, so a "play my exact run" link played a different match.
+  const day = RNG.dayNumber();
+  eq('daily seed == seedForDay(today)', RNG.dailySeedString(), RNG.seedForDay(day));
+  const a = runMatch(RNG.dailySeedString());
+  const b = runMatch(RNG.seedForDay(day));
+  eq('and therefore produce an identical match',
+    a.result.standings.map(x => x.name + ':' + x.rank + ':' + x.t.toFixed(3)),
+    b.result.standings.map(x => x.name + ':' + x.rank + ':' + x.t.toFixed(3)));
+  ok('different days are different arenas',
+    RNG.seedForDay(day) !== RNG.seedForDay(day + 1));
+}
+
+console.log('\nHOSTILE CHALLENGE PARAMS');
+{
+  const bad = [
+    '?d=%',                       // malformed escape: decodeURIComponent throws
+    '?d=NaN&t=NaN&p=NaN',
+    '?d=-5&p=-1&t=-99',
+    '?d=1e400&t=1e400',
+    '?d=999999999999999&p=99999',
+    '?n=' + '%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E',
+    '?s=' + 'x'.repeat(500),
+  ];
+  let survived = 0;
+  for (const q of bad) {
+    global.location.search = q;
+    try {
+      const c = Share.parseChallenge();
+      if (c) {
+        if (c.day !== null && !(isFinite(c.day) && c.day > 0)) throw new Error('bad day survived: ' + c.day);
+        if (c.time !== null && !(isFinite(c.time) && c.time >= 0)) throw new Error('bad time survived: ' + c.time);
+        if (c.rank !== null && !(isFinite(c.rank) && c.rank > 0)) throw new Error('bad rank survived: ' + c.rank);
+        if (c.name && /[^A-Z0-9_]/.test(c.name)) throw new Error('unsanitised name: ' + c.name);
+        if (c.seed && c.seed.length > 64) throw new Error('unbounded seed');
+      }
+      survived++;
+    } catch (e) {
+      ok('handles ' + q, false, e.message);
+    }
+  }
+  ok('every hostile query string is parsed safely', survived === bad.length, survived + '/' + bad.length);
+  global.location.search = '';
+}
+
+console.log('\nSTREAKS');
+{
+  const today = RNG.dayNumber();
+  const res = { mode: 'daily', won: true, rank: 1 };
+  mem['lod.progress'] = JSON.stringify({ lastDay: today - 1, streak: 3, best: 3, wins: 0, plays: 0, bestRank: 99 });
+  eq('playing today continues the streak', Share.recordDaily(today, res).streak, 4);
+  eq('playing again the same day does not double it', Share.recordDaily(today, res).streak, 4);
+  eq("a challenge for someone else's day does not touch it",
+    Share.recordDaily(today - 40, res).streak, 4);
+  eq('an endless run does not touch it',
+    Share.recordDaily(today, { mode: 'endless', won: true, rank: 1 }).streak, 4);
+  mem['lod.progress'] = JSON.stringify({ lastDay: today - 9, streak: 7, best: 7, wins: 0, plays: 0, bestRank: 99 });
+  eq('a missed day resets the streak to 1', Share.recordDaily(today, res).streak, 1);
+}
+
 console.log('\nDAILY SEED');
 {
   const d1 = new Date(2026, 8, 6, 23, 59), d2 = new Date(2026, 8, 7, 0, 1);

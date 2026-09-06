@@ -71,11 +71,20 @@ html, body {
   padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
 }
 .screen.show { display: flex; }
+/* The menu is a veil, not a wall: a match plays out behind the title. */
+#menu {
+  background: linear-gradient(180deg, rgba(7,6,13,.90) 0%, rgba(9,7,18,.66) 42%,
+                                      rgba(7,6,13,.88) 100%);
+}
 #results { background: rgba(7,6,13,.28); transition: background .9s ease .2s; }
 #results.settled { background: radial-gradient(120% 80% at 50% 8%, #1a1030 0%, #07060d 62%); }
 #results .strip, #results .stats, #results .btnrow, #results #btn-menu, #results #share-note {
-  opacity: 0; transition: opacity .5s ease;
+  /* pointer-events matters as much as opacity here: without it the SHARE and
+     AGAIN buttons are invisible but still take taps during the reveal. */
+  opacity: 0; pointer-events: none; transition: opacity .5s ease;
 }
+#results.settled .strip, #results.settled .stats, #results.settled .btnrow,
+#results.settled #btn-menu, #results.settled #share-note { pointer-events: auto; }
 #results.settled .strip, #results.settled .stats, #results.settled .btnrow,
 #results.settled #btn-menu, #results.settled #share-note { opacity: 1; }
 .screen .stack {
@@ -288,7 +297,11 @@ html, body {
 .win .r1 { color: var(--hot); text-shadow: 0 0 34px rgba(255,243,176,.5); }
 .lose .r1 { color: var(--text); }
 
-.strip { font-size: 19px; letter-spacing: 1.5px; line-height: 1.35; word-break: break-all; }
+.strip {
+  font-size: 19px; letter-spacing: 1.5px; line-height: 1.35;
+  white-space: pre;          /* the burnline's rows are newline-separated */
+  overflow-x: auto; max-width: 100%;
+}
 .stats {
   display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%;
   font-size: 11.5px; color: var(--dim);

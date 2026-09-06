@@ -32,8 +32,11 @@
   function loadProgress() {
     return Store.get('progress', { lastDay: 0, streak: 0, best: 0, wins: 0, plays: 0, bestRank: 99 });
   }
+  /** Only the real, current daily moves the streak — not a challenge link for
+   *  somebody else's day, and not an endless run. */
   function recordDaily(dayNum, result) {
     var p = loadProgress();
+    if (result.mode !== 'daily' || dayNum !== global.RNG.dayNumber()) return p;
     if (p.lastDay !== dayNum) {
       p.streak = (p.lastDay === dayNum - 1) ? p.streak + 1 : 1;
       p.lastDay = dayNum;
@@ -78,7 +81,11 @@
   }
 
   /* ---- link ------------------------------------------------------------------ */
+  var CANONICAL = 'https://afkpreet.github.io/last-one-dead-alive-loda/';
   function baseUrl() {
+    // Opened from the filesystem there is no shareable origin, so point people
+    // at the hosted copy rather than at a path on the sharer's own machine.
+    if (global.location.protocol === 'file:') return CANONICAL;
     var u = global.location.origin + global.location.pathname;
     return u.replace(/index\.html$/, '');
   }
@@ -202,15 +209,26 @@
     s.split('&').forEach(function (kv) {
       var i = kv.indexOf('=');
       if (i < 0) return;
-      q[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1));
+      // A stray '%' makes decodeURIComponent throw; an unparseable link must
+      // not take the whole game down on boot.
+      try {
+        q[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1));
+      } catch (e) { /* ignore this parameter */ }
     });
     if (!q.d && !q.s) return null;
     var name = (q.n || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 10).toUpperCase();
+    // Everything here arrives from a stranger's URL. Anything that isn't a sane
+    // finite number is dropped rather than propagated into the game state.
+    var num = function (v, lo, hi) {
+      var n = parseFloat(v);
+      return (isFinite(n) && n >= lo && n <= hi) ? n : null;
+    };
+    var day = q.d != null ? num(q.d, 1, 100000) : null;
     return {
-      day: q.d ? parseInt(q.d, 10) : null,
-      seed: q.s || null,
-      rank: q.p ? parseInt(q.p, 10) : null,
-      time: q.t ? parseFloat(q.t) : null,
+      day: day === null ? null : Math.floor(day),
+      seed: q.s ? String(q.s).slice(0, 64) : null,
+      rank: q.p != null ? num(q.p, 1, 99) : null,
+      time: q.t != null ? num(q.t, 0, 86400) : null,
       name: name || null
     };
   }
