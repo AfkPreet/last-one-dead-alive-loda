@@ -167,6 +167,8 @@
     this.kills = 0;
     this.eaten = 0;
     this.stolen = 0;
+    this.gave = 0;                     // flame this soul burned as light
+    this.spilt = 0;                    // flame this soul destroyed by tearing
     this.peak = K.FLAME_START;
   }
   Soul.prototype.radius = function () { return K.R_MIN + K.R_SPAN * (this.flame / K.FLAME_MAX); };
@@ -208,6 +210,13 @@
     this.finaleT = 0;
     this.spectateT = 0;
     this.fuelGone = false;
+    // Two ledgers the story hangs on, both exact rather than estimated:
+    //   light  — flame actually consumed by draining, i.e. oil turned into light
+    //   spilled — flame destroyed mid-transfer, which never drains and so never
+    //             shines. Conservation holds: startFlame + fuelEaten = light + spilled.
+    this.light = 0;
+    this.spilled = 0;
+    this.startFlame = 0;
     this._soloRate = 0;
     this.letGoUsed = false;
     this.result = null;
@@ -259,6 +268,7 @@
       if (isPlayer) this.player = s;
     }
 
+    for (var i2 = 0; i2 < this.souls.length; i2++) this.startFlame += this.souls[i2].flame;
     for (var e = 0; e < K.EMBER_LIVE; e++) this._spawnEmber(true);
   };
 
@@ -636,7 +646,11 @@
         var amount = clamp(Math.abs(diff) * K.STEAL_RATIO, K.STEAL_MIN, K.STEAL_MAX);
         amount = Math.min(amount, bright.flame);
         bright.flame -= amount;
-        dim.flame = Math.min(K.FLAME_MAX, dim.flame + amount * K.STEAL_KEEP);
+        var kept = amount * K.STEAL_KEEP;
+        var lost = amount - kept;
+        this.spilled += lost;
+        dim.spilt += lost;                  // charged to whoever did the tearing
+        dim.flame = Math.min(K.FLAME_MAX, dim.flame + kept);
         dim.peak = Math.max(dim.peak, dim.flame);
         dim.stolen += amount;
         A.cd[key] = B.cd[key] = this.t + K.STEAL_CD;
@@ -676,10 +690,15 @@
         // The last soul burning gets a guaranteed FINALE_SECS of screen time.
         // Left to the normal formula this moment lasts a tenth of a second.
         if (this._soloRate === 0) {
+          // The final flare is given oil, so count it as oil the lamp had.
+          this.startFlame += Math.max(0, K.FINALE_FLAME - s.flame);
           s.flame = Math.max(s.flame, K.FINALE_FLAME);
           s.peak = Math.max(s.peak, s.flame);
           this._soloRate = s.flame / K.FINALE_SECS;
         }
+        var burn = Math.min(s.flame, this._soloRate * dt);
+        this.light += burn;
+        s.gave += burn;
         s.flame -= this._soloRate * dt;
         if (s.isPlayer) this._playerOutside = false;
         if (s.flame <= 0) { s.flame = 0; this._kill(s); }
@@ -695,6 +714,9 @@
             life: 0.4, r: 1.1, color: s.color(), drag: 0.9, glow: true });
         }
       }
+      var burned = Math.min(s.flame, d * dt);
+      this.light += burned;
+      s.gave += burned;
       s.flame -= d * dt;
       if (s.isPlayer) this._playerOutside = outside;
 
@@ -743,6 +765,13 @@
     }
   };
 
+  /** Total flame the arena ever handed out as fuel. */
+  Game.prototype._fuelEaten = function () {
+    var n = 0;
+    for (var i = 0; i < this.souls.length; i++) n += this.souls[i].eaten;
+    return n * K.EMBER_VALUE;
+  };
+
   Game.prototype._finish = function () {
     if (this.state === 'done') return;
     this.state = 'done';
@@ -769,6 +798,11 @@
       cut: stragglers.length > 0,
       eaten: p.eaten,
       stolen: Math.round(p.stolen),
+      gave: Math.round(p.gave),         // light this player personally gave
+      spilt: Math.round(p.spilt),       // light this player personally destroyed
+      light: Math.round(this.light),      // total light the arena gave
+      spilled: Math.round(this.spilled),  // total destroyed by tearing
+      oil: Math.round(this.startFlame + this._fuelEaten()),   // all there ever was
       peak: Math.round(p.peak),
       won: (p.rank || 1) === 1,
       outlasted: (p.rank || 1) - 1,        // how many souls managed to die after you

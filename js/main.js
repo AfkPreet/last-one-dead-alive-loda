@@ -140,6 +140,15 @@
     coachQueue.push([msg, secs || 2.6]);
   }
   function pumpCoach(now) {
+    // Tell the renderer which band of the screen the coach line is occupying so
+    // soul name labels get out of its way.
+    if (els.coach.classList.contains('show')) {
+      var cb = els.coach.getBoundingClientRect();
+      var fb = els.frame.getBoundingClientRect();
+      renderer.coachBand = [cb.top - fb.top - 6, cb.bottom - fb.top + 6];
+    } else {
+      renderer.coachBand = null;
+    }
     if (now < coachUntil) return;
     if (!coachQueue.length) { els.coach.classList.remove('show'); return; }
     var c = coachQueue.shift();

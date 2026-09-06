@@ -197,7 +197,7 @@ html, body {
   padding: 0 14px;
 }
 .hud-cell { min-width: 74px; }
-.hud-mid { text-align: center; flex: 1; }
+.hud-mid { text-align: center; flex: 1; display: flex; align-items: flex-start; justify-content: center; }
 .hud-right { text-align: right; }
 .hud-label { font-size: 8.5px; letter-spacing: .2em; color: var(--dim); }
 .hud-value { font-size: 21px; font-weight: 800; letter-spacing: .02em; line-height: 1.15; }
@@ -229,9 +229,18 @@ html, body {
    a game where #1 means the opposite of what it means everywhere else. */
 .pips {
   position: absolute; left: 0; right: 0;
-  top: calc(max(10px, env(safe-area-inset-top)) + 46px);
+  top: calc(max(10px, env(safe-area-inset-top)) + 42px);
   display: flex; justify-content: center; gap: 5px; padding: 0 14px;
 }
+/* Full width of its own: the phase strings are sentences, and inside the
+   narrow centre HUD cell they wrapped onto the pip row on a 320px screen. */
+.phase {
+  position: absolute; left: 0; right: 0;
+  top: calc(max(10px, env(safe-area-inset-top)) + 56px);
+  text-align: center; padding: 0 12px;
+  font-size: 9px; letter-spacing: .2em; color: var(--dim);
+}
+.phase.warn { color: var(--crimson); animation: pulse .6s ease-in-out infinite; }
 .pip {
   width: 7px; height: 7px; border-radius: 50%;
   background: #2a2140; transition: background .25s ease, transform .25s ease, box-shadow .25s ease;
@@ -250,7 +259,6 @@ html, body {
 }
 .burn-rate { font-weight: 800; font-size: 12px; letter-spacing: .04em; transition: color .2s linear; }
 .hud-sub { font-size: 13px; color: var(--text); opacity: .85; letter-spacing: .08em; }
-#hud-phase-label.warn { color: var(--crimson); animation: pulse .6s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
 
 #flamebar {
@@ -293,7 +301,12 @@ html, body {
   font-size: 13.5px; color: var(--dim); letter-spacing: .06em; line-height: 1.55;
   opacity: 0; animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
 }
-.reveal .r3 { color: var(--cyan); font-weight: 700; letter-spacing: .14em; font-size: 12.5px; }
+.reveal .r3 {
+  color: var(--cyan); font-weight: 700;
+  font-size: clamp(10.5px, 3.4vw, 12.5px);
+  letter-spacing: clamp(.04em, .8vw, .14em);
+  text-wrap: balance;
+}
 .reveal .r4 {
   font-size: 12px; color: var(--dim); opacity: 0; font-style: italic; letter-spacing: .02em;
   animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
@@ -303,9 +316,15 @@ html, body {
 .lose .r1 { color: var(--text); }
 
 .strip {
-  font-size: 19px; letter-spacing: 1.5px; line-height: 1.35;
-  white-space: pre;          /* the burnline's rows are newline-separated */
-  overflow-x: auto; max-width: 100%;
+  /* A grid: rows left-aligned to each other, the block itself centred, and
+     sized so ten cells clear a 320px screen. */
+  display: inline-block;
+  text-align: left;
+  font-size: clamp(14px, 5.2vw, 19px);
+  letter-spacing: clamp(0.5px, 0.4vw, 1.5px);
+  line-height: 1.3;
+  white-space: pre;
+  max-width: 100%;
 }
 .stats {
   display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%;

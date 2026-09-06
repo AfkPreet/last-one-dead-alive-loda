@@ -15,6 +15,8 @@
     this.showNames = true;
     this.reduced = false;
     this.zoom = 1;
+    this.coachBand = null;     // [top, bottom] in screen px while a coach line shows
+    this.marker = null;
     this._lastT = 0;
     this._bg = null; this._bgKey = '';
   }
@@ -315,6 +317,14 @@
 
   /** True when no other living soul is close enough for the labels to collide. */
   Renderer.prototype._hasRoom = function (game, s) {
+    // The coach line owns its band while it is showing; a name label underneath
+    // it is unreadable and makes both look like a mistake.
+    if (this.coachBand) {
+      // Test where the LABEL lands, not the soul: it is drawn above the body,
+      // so a soul below the band can still push its name into it.
+      var ly = this.toScreenY(s.y - s.radius() - 1.4);
+      if (ly > this.coachBand[0] && ly < this.coachBand[1]) return false;
+    }
     for (var i = 0; i < game.souls.length; i++) {
       var o = game.souls[i];
       if (o === s || !o.alive) continue;
@@ -373,7 +383,10 @@
     if (!p || !p.alive) return;
     var m = 20;
     var x = this.toScreenX(p.x), y = this.toScreenY(p.y);
-    if (x >= m && x <= cw - m && y >= m && y <= ch - m) return;
+    // Only once the soul is FULLY off the canvas. Firing on the margin drew the
+    // marker on top of a player who was still half visible, which read as a bug.
+    var r = p.radius() * this.scale + 4;
+    if (x + r > 0 && x - r < cw && y + r > 0 && y - r < ch) return;
 
     var cx = cw / 2, cy = ch / 2;
     var dx = x - cx, dy = y - cy;
