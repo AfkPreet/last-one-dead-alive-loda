@@ -384,7 +384,7 @@ html, body {
 }
 
 /* ---------- results ---------- */
-.reveal { min-height: 148px; display: flex; flex-direction: column; justify-content: center; gap: 7px; }
+.reveal { min-height: 164px; display: flex; flex-direction: column; justify-content: center; gap: 7px; }
 .reveal .r1 {
   font-size: clamp(30px, 10vw, 42px); font-weight: 800; letter-spacing: .04em;
   opacity: 0; animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
@@ -400,6 +400,11 @@ html, body {
   text-wrap: balance;
 }
 .reveal .dim { color: var(--dim); font-size: .88em; }
+.reveal .r5 {
+  font-size: 11.5px; color: var(--dim); opacity: 0; letter-spacing: .1em;
+  animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
+}
+.win .r5 { color: #ff8fa3; }
 .reveal .r4 {
   font-size: 12px; color: var(--dim); opacity: 0; font-style: italic; letter-spacing: .02em;
   animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
@@ -476,7 +481,7 @@ html, body {
     <div id="pips" class="pips" aria-hidden="true"></div>
     <div id="hud-phase-label" class="phase">THE LIGHT HOLDS</div>
     <div id="burnline-hud">
-      <span class="burn-label">BURNING</span>
+      <span class="burn-label">LOSING</span>
       <span class="burn-rate" id="hud-burn">0.0/s</span>
     </div>
     <div id="flamebar"><div id="flamebar-fill"></div></div>
@@ -1720,7 +1725,7 @@ html, body {
     if (!c) {
       return ['SOMEONE WENT OUT HERE BEFORE YOU.',
               'THEY LEFT YOU FORTY.',
-              'CARRY IT TO THE END OF THE NIGHT.'];
+              'YOU GOT HERE LATE.<br><em>SO BE THE LAST TO LEAVE.</em>'];
     }
     if (ledger.chain === 0 && ledger.nights > 0) {
       var lost = ledger.lastDropped;
@@ -1732,7 +1737,7 @@ html, body {
     }
     return [(c.name || 'SOMEONE') + ' CARRIED IT ' + mmss(c.time) + '.',
             'NOW YOU DO.',
-            'TO THE END OF THE NIGHT.'];
+            '<em>BE THE LAST TO LEAVE.</em>'];
   }
 
   function mmss(sec) {
@@ -3646,8 +3651,10 @@ html, body {
     global.__g = game; global.__r = renderer; global.__i = input;   // test harness hooks (tools/*.js)
     // The opening is three lines on the three countdown beats. After a few
     // nights it collapses to the one line that still matters.
-    openingLines = ledger.nights < 3 ? global.Story.opening(ledger)
-                                     : [global.Story.opening(ledger)[0]];
+    // Decay keeps the LAST line \u2014 the character and the goal \u2014 not the first,
+    // which is only scene-setting a returning player already has.
+    var op = global.Story.opening(ledger);
+    openingLines = ledger.nights < 3 ? op : [op[op.length - 1]];
     show(null);
     // Fire the first line on the very first frame rather than after a beat of
     // dead air.
@@ -3920,6 +3927,12 @@ html, body {
       line('r4', night && night.carriedName
         ? night.carriedName + ' reached the end of the night in your hands.'
         : 'It reached the end of the night in your hands.', 3100);
+      // And the honest half. Being last and giving light are two different
+      // goods; the game only scores the one that was about you, so it should at
+      // least say what that one cost. Both numbers are exact.
+      line('r5', res.spilt >= 12
+        ? 'Staying cost the light ' + res.spilt + '.'
+        : 'And you took almost nothing to do it.', 3900);
     } else {
       // Never a bare ordinal: "#4" means the opposite here to everywhere else,
       // and one second of "wait, is that good?" at first death loses the player.

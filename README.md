@@ -53,7 +53,8 @@ matches.
 They are in tension, and the tension is measured, not asserted. You cannot last
 longest without taking, because the fuel runs out at 40s and a pacifist run goes
 out early. But every take destroys a third of what it touches, permanently. Over
-a full match the twelve lamps spill about a fifth of all the oil in the field.
+300 headless matches the twelve lamps destroy **16.2%** of all the oil in the
+field this way — 189 units of 1165, gone, having never been light.
 
 So the scoreboard tells you that you were the one still burning, and the column
 beside it tells you what that cost the light.

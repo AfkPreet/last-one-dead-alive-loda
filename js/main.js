@@ -277,8 +277,10 @@
     global.__g = game; global.__r = renderer; global.__i = input;   // test harness hooks (tools/*.js)
     // The opening is three lines on the three countdown beats. After a few
     // nights it collapses to the one line that still matters.
-    openingLines = ledger.nights < 3 ? global.Story.opening(ledger)
-                                     : [global.Story.opening(ledger)[0]];
+    // Decay keeps the LAST line — the character and the goal — not the first,
+    // which is only scene-setting a returning player already has.
+    var op = global.Story.opening(ledger);
+    openingLines = ledger.nights < 3 ? op : [op[op.length - 1]];
     show(null);
     // Fire the first line on the very first frame rather than after a beat of
     // dead air.
@@ -551,6 +553,12 @@
       line('r4', night && night.carriedName
         ? night.carriedName + ' reached the end of the night in your hands.'
         : 'It reached the end of the night in your hands.', 3100);
+      // And the honest half. Being last and giving light are two different
+      // goods; the game only scores the one that was about you, so it should at
+      // least say what that one cost. Both numbers are exact.
+      line('r5', res.spilt >= 12
+        ? 'Staying cost the light ' + res.spilt + '.'
+        : 'And you took almost nothing to do it.', 3900);
     } else {
       // Never a bare ordinal: "#4" means the opposite here to everywhere else,
       // and one second of "wait, is that good?" at first death loses the player.

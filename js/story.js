@@ -143,7 +143,7 @@
     if (!c) {
       return ['SOMEONE WENT OUT HERE BEFORE YOU.',
               'THEY LEFT YOU FORTY.',
-              'CARRY IT TO THE END OF THE NIGHT.'];
+              'YOU GOT HERE LATE.<br><em>SO BE THE LAST TO LEAVE.</em>'];
     }
     if (ledger.chain === 0 && ledger.nights > 0) {
       var lost = ledger.lastDropped;
@@ -155,7 +155,7 @@
     }
     return [(c.name || 'SOMEONE') + ' CARRIED IT ' + mmss(c.time) + '.',
             'NOW YOU DO.',
-            'TO THE END OF THE NIGHT.'];
+            '<em>BE THE LAST TO LEAVE.</em>'];
   }
 
   function mmss(sec) {
