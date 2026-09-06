@@ -147,6 +147,22 @@ console.log('\nSHARE TEXT');
   ok('a challenge run reports the comparison', /outlived PRT/.test(ghost), ghost);
 }
 
+console.log('\nRE-SHARING KEEPS THE ARENA');
+{
+  // Forwarding somebody's endless challenge must forward the SEED. Emitting
+  // "?d=<today>" instead would silently point the next player at a different
+  // arena and break the chain.
+  const endless = { mode: 'endless', seed: 'E-999-abc', rank: 1, total: 12, time: 44,
+                    samples: [[1, 40]], won: true, eaten: 3, stolen: 5, peak: 50 };
+  const url = Share.challengeUrl(endless, RNG.dayNumber());
+  ok('an endless result re-shares its seed, not a day', /[?&]s=E-999-abc/.test(url) && !/[?&]d=/.test(url), url);
+  const head = Share.buildText(endless, RNG.dayNumber(), {}, false, null).split('\n')[0];
+  ok('and is labelled by its seed words, not "DAY n"', !/DAY \d/.test(head), head);
+  const daily = Object.assign({}, endless, { mode: 'daily', seed: RNG.dailySeedString() });
+  const durl = Share.challengeUrl(daily, RNG.dayNumber());
+  ok('a daily result still re-shares as a day', /[?&]d=\d+/.test(durl) && !/[?&]s=/.test(durl), durl);
+}
+
 console.log('\nCHALLENGE LINKS');
 {
   global.location.search = '?d=248&p=3&t=91&n=pr%20t!!';
@@ -219,6 +235,11 @@ console.log('\nSTREAKS');
     Share.recordDaily(today - 40, res).streak, 4);
   eq('an endless run does not touch it',
     Share.recordDaily(today, { mode: 'endless', won: true, rank: 1 }).streak, 4);
+  // A ?s= challenge is someone's endless arena played today: both the mode and
+  // the day guard have to hold, or a stranger's seed pollutes the daily record.
+  const before = Share.loadProgress().plays;
+  eq('a seed challenge played today does not touch the daily record',
+    Share.recordDaily(today, { mode: 'endless', seed: 'E-999-abc', won: true, rank: 1 }).plays, before);
   mem['lod.progress'] = JSON.stringify({ lastDay: today - 9, streak: 7, best: 7, wins: 0, plays: 0, bestRank: 99 });
   eq('a missed day resets the streak to 1', Share.recordDaily(today, res).streak, 1);
 }

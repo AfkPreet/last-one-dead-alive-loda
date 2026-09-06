@@ -203,7 +203,11 @@
     cancelAnimationFrame(loopId);
     revealTimers.forEach(clearTimeout); revealTimers = [];
 
-    var m = challenge ? 'daily' : mode;
+    // A ?s= challenge is somebody's ENDLESS arena, not today's daily. Tagging it
+    // 'daily' would let it move the daily streak and would re-share as
+    // "?d=<today>", dropping the seed and breaking the challenge chain at the
+    // first forward. The tag is metadata only — seedFor() below picks the arena.
+    var m = challenge ? (challenge.seed ? 'endless' : 'daily') : mode;
     game = new Game({ seed: seedFor(m), mode: m });
     game.cam.enabled = settings.shake;
     game.reduced = !settings.shake;
