@@ -73,8 +73,13 @@ html, body {
 .screen.show { display: flex; }
 /* The menu is a veil, not a wall: a match plays out behind the title. */
 #menu {
-  background: linear-gradient(180deg, rgba(7,6,13,.90) 0%, rgba(9,7,18,.66) 42%,
-                                      rgba(7,6,13,.88) 100%);
+  /* Open at the top and bottom, where the arena's ellipse reaches and there is
+     no copy, and opaque through the middle so the title and buttons stay clean. */
+  background: linear-gradient(180deg,
+    rgba(7,6,13,.55) 0%,
+    rgba(7,6,13,.93) 26%,
+    rgba(7,6,13,.94) 74%,
+    rgba(7,6,13,.55) 100%);
 }
 #results { background: rgba(7,6,13,.28); transition: background .9s ease .2s; }
 #results.settled { background: radial-gradient(120% 80% at 50% 8%, #1a1030 0%, #07060d 62%); }
