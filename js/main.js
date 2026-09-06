@@ -151,6 +151,29 @@
   /* ---------- match ---------- */
   var loopId = 0, lastT = 0, acc = 0;
   var STEP = 1 / 60, MAX_FRAME = 0.25, MAX_STEPS = 5;
+
+  /* Adaptive resolution. Frame cost here is almost entirely fill rate, so on a
+   * phone that can't hold 60fps the right lever is pixels, not effects. Steps
+   * down only, with a long window and hysteresis, so it never oscillates. */
+  var QUALITY_STEPS = [1, 0.8, 0.65, 0.5];
+  var qIndex = 0, qSamples = [], qCooldown = 0;
+  function adaptQuality(frameMs, now) {
+    if (now < qCooldown) return;
+    qSamples.push(frameMs);
+    if (qSamples.length < 90) return;
+    qSamples.sort(function (a, b) { return a - b; });
+    var p70 = qSamples[Math.floor(qSamples.length * 0.7)];
+    qSamples.length = 0;
+    if (p70 > 23 && qIndex < QUALITY_STEPS.length - 1) {
+      qIndex++;
+      surface.setQuality(QUALITY_STEPS[qIndex]);
+      qCooldown = now + 4000;          // let it settle before judging again
+    } else if (p70 < 11 && qIndex > 0) {
+      qIndex--;
+      surface.setQuality(QUALITY_STEPS[qIndex]);
+      qCooldown = now + 8000;          // climb back reluctantly
+    }
+  }
   var countdownN = 0, countdownT = 0;
   var seenPickup = false, seenSteal = false, seenDrain = false, warnedOnce = false;
 
@@ -187,7 +210,7 @@
     els.coach.classList.remove('show');
     ghostPassed = false;
 
-    global.__g = game;                 // test harness hook (tools/smoke.js)
+    global.__g = game; global.__r = renderer;   // test harness hooks (tools/*.js)
     show(null);
     countdownN = 3; countdownT = 0;
     lastT = performance.now(); acc = 0;
@@ -205,9 +228,11 @@
 
   function frame(now) {
     loopId = requestAnimationFrame(frame);
-    var dt = (now - lastT) / 1000;
+    var frameMs = now - lastT;
+    var dt = frameMs / 1000;
     lastT = now;
     if (dt > MAX_FRAME) dt = MAX_FRAME;          // a backgrounded tab must not fast-forward the match
+    else adaptQuality(frameMs, now);             // ignore stalls; they aren't render cost
     acc += dt;
 
     // Countdown runs on wall time, before the sim starts.
@@ -328,6 +353,45 @@
     els.phase.classList.toggle('warn', warn);
   }
 
+  /* Deadpan sign-off, drawn from a seeded stream so a given run always gets the
+   * same line — two players comparing the same daily see the same joke. */
+  var DEATH_LINES = {
+    letGo: [
+      'You had a whole match left and you spent it on a button.',
+      'On purpose. Respect, sort of.',
+      'That was always allowed. That was the point.'
+    ],
+    first: [
+      'First out. Someone has to be.',
+      'You were the brightest thing here. Congratulations.',
+      'Twelve souls, and the dark picked you.'
+    ],
+    bright: [
+      'Too much life. Classic mistake.',
+      'Something dimmer wanted what you were carrying.',
+      'You made yourself the biggest fire in the room.'
+    ],
+    dim: [
+      'Ran out. The boring one.',
+      'You were almost nothing, and then you were.',
+      'The dark did most of the work.'
+    ],
+    close: [
+      'One more second.',
+      'Second-last is just first-loser with extra steps.',
+      'You nearly had it. Nearly.'
+    ]
+  };
+  function deathLine(res) {
+    var r = new R.Rng(res.seed + ':epitaph:' + res.rank);
+    var pool = res.letGo ? DEATH_LINES.letGo
+             : res.rank === res.total ? DEATH_LINES.first
+             : res.rank <= 3 ? DEATH_LINES.close
+             : res.peak >= 55 ? DEATH_LINES.bright
+             : DEATH_LINES.dim;
+    return r.pick(pool);
+  }
+
   /* ---------- results ---------- */
   function onFinished(res) {
     lastResult = res;
@@ -379,18 +443,17 @@
       line('r1', 'YOU DIED LAST.', 0);
       line('r2', '…which means you were the last one alive.', 1200);
       line('r3', 'LAST ONE DEAD = LAST ONE ALIVE', 2300);
-    } else if (res.letGo) {
-      line('r1', 'YOU LET GO.', 0);
-      line('r2', res.outlasted + ' souls were still burning.', 900);
-      line('r3', 'IT ASKED YOU TO DIE <b>LAST</b>', 1700);
     } else {
       // Never a bare ordinal: "#4" means the opposite here to everywhere else,
-      // and a second of "wait, is that good?" at first death loses the player.
-      line('r1', 'YOU WENT OUT EARLY.', 0);
-      line('r2', res.outlasted === 1
-        ? 'One soul outlasted you.'
-        : res.outlasted + ' souls outlasted you.', 900);
+      // and one second of "wait, is that good?" at first death loses the player.
+      var winner = (res.standings && res.standings[0]) ? res.standings[0].name : null;
+      line('r1', res.letGo ? 'YOU LET GO.' : 'YOU WENT OUT EARLY.', 0);
+      var fact = res.outlasted === 1 ? 'One soul outlasted you.'
+                                     : res.outlasted + ' souls outlasted you.';
+      if (winner) fact += '<br>' + winner + ' died last.';
+      line('r2', fact, 900);
       line('r3', 'YOU HAD TO DIE <b>LAST</b>', 1700);
+      line('r4', deathLine(res), 2400);
     }
 
     revealTimers.push(setTimeout(function () {
@@ -429,12 +492,33 @@
   });
 
   /* ---------- buttons ---------- */
-  $('btn-letgo').addEventListener('click', function (e) {
-    e.stopPropagation();
-    if (!game || screen !== null) return;
-    if (game.state === 'spectate') { game.skipSpectate(); return; }
-    if (game.letGo()) { A.play('death'); haptic([140, 60, 40]); }
-  });
+  /* LET GO is held for 600ms, not tapped. The offer of death stays permanent and
+   * un-dialogged, but a thumb that brushes the corner mid-panic doesn't end the run. */
+  (function () {
+    var btn = $('btn-letgo'), timer = 0, armed = false;
+    function cancel() {
+      if (timer) { clearTimeout(timer); timer = 0; }
+      btn.classList.remove('arming');
+      armed = false;
+    }
+    btn.addEventListener('pointerdown', function (e) {
+      e.stopPropagation(); e.preventDefault();
+      if (!game || screen !== null) return;
+      if (game.state === 'spectate') { game.skipSpectate(); return; }
+      if (!game.player.alive) return;
+      armed = true;
+      btn.classList.add('arming');
+      haptic(8);
+      timer = setTimeout(function () {
+        cancel();
+        if (game && game.letGo()) { A.play('death'); haptic([140, 60, 40]); }
+      }, 600);
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) {
+      btn.addEventListener(ev, function (e) { if (armed) { e.stopPropagation(); } cancel(); });
+    });
+    btn.addEventListener('click', function (e) { e.stopPropagation(); e.preventDefault(); });
+  })();
 
   $('btn-play').addEventListener('click', function () { A.unlock(); A.play('ui'); startMatch(); });
   $('btn-again').addEventListener('click', function () { A.play('ui'); startMatch(); });

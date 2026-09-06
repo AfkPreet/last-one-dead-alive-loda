@@ -38,6 +38,7 @@
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false });
     this.w = 0; this.h = 0; this.dpr = 1;
+    this.quality = 1;          // render-scale multiplier, dropped under load
     this.onResize = null;
     this._resize = this.resize.bind(this);
     var self = this;
@@ -62,7 +63,7 @@
     var rect = this.canvas.getBoundingClientRect();
     var cssW = Math.max(1, Math.round(rect.width));
     var cssH = Math.max(1, Math.round(rect.height));
-    var dpr = Math.min(MAX_DPR, global.devicePixelRatio || 1);
+    var dpr = Math.min(MAX_DPR, global.devicePixelRatio || 1) * this.quality;
     if (cssW === this.w && cssH === this.h && dpr === this.dpr) return;
     this.w = cssW; this.h = cssH; this.dpr = dpr;
     this.canvas.width = Math.round(cssW * dpr);
@@ -70,6 +71,18 @@
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.ctx.imageSmoothingEnabled = true;
     if (this.onResize) this.onResize(cssW, cssH, dpr);
+  };
+
+  /** Drop the render scale when the GPU can't keep up. This game is entirely
+   *  fill-rate bound (glow sprites composited with 'lighter'), so resolution is
+   *  the only lever that matters, and it is invisible on a glow-heavy scene. */
+  Surface.prototype.setQuality = function (q) {
+    q = Math.max(0.5, Math.min(1, q));
+    if (Math.abs(q - this.quality) < 0.01) return false;
+    this.quality = q;
+    this.dpr = -1;               // force resize() past its no-op guard
+    this.resize();
+    return true;
   };
 
   /* ---- Reduced motion -------------------------------------------------------- */

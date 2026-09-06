@@ -199,6 +199,17 @@ html, body {
   transition: color .15s ease, border-color .15s ease, background .15s ease;
 }
 .letgo:active { color: var(--crimson); border-color: var(--crimson); background: rgba(255,45,85,.12); }
+/* Held, not tapped: the offer stays honest and un-dialogged, but a thumb that
+   brushes the corner mid-panic doesn't end the run. */
+.letgo { position: relative; overflow: hidden; }
+.letgo::before {
+  content: ""; position: absolute; inset: 0;
+  background: var(--crimson); opacity: .28;
+  transform: scaleX(0); transform-origin: left center;
+}
+.letgo.arming { color: var(--crimson); border-color: var(--crimson); }
+.letgo.arming::before { transform: scaleX(1); transition: transform .6s linear; }
+.letgo > span { position: relative; }
 
 /* One pip per soul. Removes every ordinal from the HUD — "#4" is unreadable in
    a game where #1 means the opposite of what it means everywhere else. */
@@ -259,7 +270,7 @@ html, body {
 }
 
 /* ---------- results ---------- */
-.reveal { min-height: 118px; display: flex; flex-direction: column; justify-content: center; gap: 7px; }
+.reveal { min-height: 132px; display: flex; flex-direction: column; justify-content: center; gap: 7px; }
 .reveal .r1 {
   font-size: clamp(30px, 10vw, 42px); font-weight: 800; letter-spacing: .04em;
   opacity: 0; animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
@@ -269,6 +280,10 @@ html, body {
   opacity: 0; animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
 }
 .reveal .r3 { color: var(--cyan); font-weight: 700; letter-spacing: .14em; font-size: 12.5px; }
+.reveal .r4 {
+  font-size: 12px; color: var(--dim); opacity: 0; font-style: italic; letter-spacing: .02em;
+  animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
+}
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 .win .r1 { color: var(--hot); text-shadow: 0 0 34px rgba(255,243,176,.5); }
 .lose .r1 { color: var(--text); }

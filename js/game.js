@@ -1,11 +1,18 @@
 /* game.js — the arena simulation.
  *
  * DESIGN NOTE, because every rule below looks like a bug otherwise:
- * this is a battle royale played backwards. Your flame is the clock on your
- * life and it drains *faster the more of it you have*, so the strong burn out
- * first. The spiky red things are food, not hazards. Touching a brighter soul
- * lets you tear its flame out. The winner is the LAST soul to go out — which,
- * once you say it out loud, is just "the last one alive".
+ * this is a battle royale played backwards. The spiky red things are food, not
+ * hazards. Touching a brighter soul lets you tear its flame out, so the leader
+ * is prey. The winner is the LAST soul to go out — which, once you say it out
+ * loud, is just "the last one alive".
+ *
+ * ON THE DRAIN FORMULA, so nobody re-derives this the hard way: drain rises
+ * with flame, which means each extra point of flame buys LESS time than the
+ * last — but it still buys some. Time-to-zero is the integral of dF/drain(F),
+ * which is strictly increasing in starting flame for any positive drain, so no
+ * formula of this shape can ever make "more life" mean "less life". Hoarding is
+ * punished by PREDATION, not by arithmetic: a bright soul is physically bigger,
+ * every dimmer soul can rob it, and the amount robbed scales with the gap.
  */
 (function (global) {
   'use strict';
@@ -21,8 +28,9 @@
     FLAME_MAX: 100,
     FLAME_START: 40,
 
-    // dFlame/dt = -(BASE + K*flame).  Full flame burns out in ~32s; a soul on
-    // fumes lingers for ages. This single formula is the whole inversion.
+    // dFlame/dt = -(BASE + K*flame). Diminishing returns on flame: the first 10
+    // points buy ~7s, the tenth 10 buy ~2s. It is a tax on brightness, not a
+    // punishment for it — see the note at the top of this file.
     DRAIN_BASE: 1.15,
     DRAIN_K: 0.045,
     VOID_DRAIN: 5.5,          // extra drain per second while outside the light
@@ -553,8 +561,8 @@
         s.vx *= 0.4; s.vy *= 0.4;
       }
 
-      // Trail — denser and hotter the brighter you are, so you can *see* yourself
-      // burning the fuel you are hoarding.
+      // Trail — denser and hotter the brighter you are, so a bright soul can see
+      // (and every hunter can see) exactly how much it is carrying.
       var sped = Math.hypot(s.vx, s.vy);
       s.trail -= dt * (1 + sped / 22) * (0.6 + s.flame / 60);
       if (s.trail <= 0 && !this.reduced) {

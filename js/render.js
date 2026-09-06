@@ -21,6 +21,52 @@
 
   var MAX_ZOOM = 2.15;
 
+  /* Baked gradients. createRadialGradient is cheap; filling a large area with
+   * one, 60 times a second, is not — especially at devicePixelRatio 2+. */
+  var FIELD_PX = 256;
+  var fieldSprite = null, fieldSpriteHi = null;
+  function makeField(boost) {
+    var c = document.createElement('canvas');
+    c.width = c.height = FIELD_PX;
+    var g = c.getContext('2d');
+    var h = FIELD_PX / 2;
+    var grad = g.createRadialGradient(h, h, 0, h, h, h);
+    grad.addColorStop(0, 'rgba(32,20,62,' + (0.95 + boost) + ')');
+    grad.addColorStop(0.55, 'rgba(22,13,44,0.70)');
+    grad.addColorStop(0.88, 'rgba(14,9,29,0.38)');
+    grad.addColorStop(1, 'rgba(10,7,22,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, FIELD_PX, FIELD_PX);
+    return c;
+  }
+  function fieldFor(finale) {
+    if (finale) { if (!fieldSpriteHi) fieldSpriteHi = makeField(0.4); return fieldSpriteHi; }
+    if (!fieldSprite) fieldSprite = makeField(0);
+    return fieldSprite;
+  }
+
+  var vigCache = { key: '', normal: null, danger: null };
+  function vignetteFor(cw, ch, danger) {
+    var key = cw + 'x' + ch;
+    if (vigCache.key !== key) {
+      vigCache.key = key; vigCache.normal = null; vigCache.danger = null;
+    }
+    var slot = danger ? 'danger' : 'normal';
+    if (!vigCache[slot]) {
+      var c = document.createElement('canvas');
+      c.width = cw; c.height = ch;
+      var g = c.getContext('2d');
+      var grad = g.createRadialGradient(cw / 2, ch / 2, Math.min(cw, ch) * 0.32,
+                                        cw / 2, ch / 2, Math.max(cw, ch) * 0.72);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, danger ? 'rgba(120,6,30,.62)' : 'rgba(0,0,0,.55)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, cw, ch);
+      vigCache[slot] = c;
+    }
+    return vigCache[slot];
+  }
+
   Renderer.prototype.layout = function (worldH, ringR, ringRY, dt) {
     var cw = this.s.w, ch = this.s.h;
     var base = Math.min(cw / 100, ch / worldH);
@@ -108,14 +154,11 @@
     ctx.translate(cx, cy);
     ctx.scale(1, k);
 
-    var boost = game.state === 'finale' ? 0.4 : 0;
-    var g = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(1, rx));
-    g.addColorStop(0, this.contrast ? 'rgba(40,28,72,1)' : 'rgba(32,20,62,' + (0.95 + boost) + ')');
-    g.addColorStop(0.55, 'rgba(22,13,44,0.70)');
-    g.addColorStop(0.88, 'rgba(14,9,29,0.38)');
-    g.addColorStop(1, 'rgba(10,7,22,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(0, 0, rx * 1.02, 0, TAU); ctx.fill();
+    var fs = fieldFor(game.state === 'finale');
+    var fr = rx * 1.02;
+    ctx.globalAlpha = this.contrast ? 1 : 0.92;
+    ctx.drawImage(fs, -fr, -fr, fr * 2, fr * 2);
+    ctx.globalAlpha = 1;
 
     // Reference rings + spokes: cheap, and they make the shrink legible.
     ctx.beginPath(); ctx.arc(0, 0, rx, 0, TAU); ctx.clip();
@@ -319,13 +362,8 @@
   Renderer.prototype._drawVignette = function (ctx, cw, ch, game) {
     // Redden the edges when the player is out in the void — the only "damage
     // indicator" the game has.
-    var danger = game._playerOutside && game.player.alive ? 1 : 0;
-    var g = ctx.createRadialGradient(cw / 2, ch / 2, Math.min(cw, ch) * 0.32,
-                                     cw / 2, ch / 2, Math.max(cw, ch) * 0.72);
-    g.addColorStop(0, 'rgba(0,0,0,0)');
-    g.addColorStop(1, danger ? 'rgba(120,6,30,.62)' : 'rgba(0,0,0,.55)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, cw, ch);
+    var danger = !!(game._playerOutside && game.player.alive);
+    ctx.drawImage(vignetteFor(cw, ch, danger), 0, 0);
   };
 
   global.Renderer = Renderer;

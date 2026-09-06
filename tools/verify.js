@@ -96,7 +96,19 @@ async function playTo(page, force) {
     await playTo(page);
     await page.waitForTimeout(1500);
     const aliveBefore = await page.evaluate(() => window.__g.aliveCount);
-    await page.click('#btn-letgo');
+    // A brush of the corner must NOT end the run: hold-to-arm is 600ms.
+    const lg = await page.locator('#btn-letgo').boundingBox();
+    await page.mouse.move(lg.x + lg.width / 2, lg.y + lg.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(200);
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    const afterTap = await page.evaluate(() => window.__g.player.alive);
+    ok('a short press does NOT let go', afterTap);
+    // Now hold it properly.
+    await page.mouse.down();
+    await page.waitForTimeout(900);
+    await page.mouse.up();
     await page.waitForTimeout(300);
     const st = await page.evaluate(() => ({ alive: window.__g.player.alive, used: window.__g.letGoUsed, count: window.__g.aliveCount }));
     ok('LET GO kills the player at once', !st.alive && st.used);
@@ -107,6 +119,8 @@ async function playTo(page, force) {
     await page.screenshot({ path: OUT + '/12-letgo.png' });
     ok('results name the choice', /YOU LET GO/.test(r), r);
     ok('and still state the rule', /DIE LAST/.test(r), r);
+    ok('results name who actually died last', /died last/i.test(r), r);
+    ok('a deadpan sign-off is shown', r.trim().split('\n').length >= 4, r);
     ok('no console errors', page.errors.length === 0, page.errors[0]);
     await page.context().close();
   }
