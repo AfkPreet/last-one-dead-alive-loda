@@ -124,11 +124,12 @@
     dim:    '#9a90b8'
   };
 
+  /* Fallback names for a match run without a ledger (the menu preview, the sim).
+   * Story.namePool overrides these for real nights. */
   var NAMES = [
     'CINDER', 'WICK', 'SOOT', 'PYRE', 'GLIM', 'ASHFALL', 'SMOLDER', 'KINDLE',
-    'FLICKER', 'DUSK', 'EMBERLY', 'CHAR', 'TALLOW', 'GLOAM', 'MURK', 'RUST',
-    'xX_ashes_Xx', 'notdying69', 'ok_i_die', 'final_flame', 'mom_gets_off_at_6',
-    'burnout.exe', 'still_here', 'unlit', 'lastlight', 'DNF', 'afk_forever'
+    'FLICKER', 'DUSK', 'EMBERLY', 'CHAR', 'TALLOW', 'GLOAM', 'MURK', 'RUSHLIGHT',
+    'TAPER', 'SPARK', 'BRAND', 'LANTERN', 'HOLLOW', 'MARA', 'VESTA', 'EMBER'
   ];
 
   var ARCH = {

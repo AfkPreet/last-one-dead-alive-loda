@@ -165,7 +165,9 @@
 
     // Reference rings + spokes: cheap, and they make the shrink legible.
     ctx.beginPath(); ctx.arc(0, 0, rx, 0, TAU); ctx.clip();
-    ctx.strokeStyle = this.contrast ? 'rgba(154,144,184,.26)' : 'rgba(123,47,247,.13)';
+    // Contrast mode DIMS the decorative grid; the labels and the player ring
+    // are what get louder (see _drawSouls).
+    ctx.strokeStyle = this.contrast ? 'rgba(123,47,247,.06)' : 'rgba(123,47,247,.13)';
     ctx.lineWidth = 1 / Math.max(0.3, k);
     var step = Math.max(16, rx / 4);
     for (var r = step * 0.5; r < rx * 1.15; r += step) {
@@ -298,7 +300,9 @@
         // A cyan ring + chevron so "you" is unmistakable without relying on hue.
         var pr = r + 2.2 + Math.sin(t * 4) * 0.35;
         ctx.beginPath(); ctx.arc(s.x, s.y, pr, 0, TAU);
-        ctx.strokeStyle = '#00f5d4'; ctx.lineWidth = 0.75; ctx.stroke();
+        ctx.strokeStyle = '#00f5d4';
+        ctx.lineWidth = this.contrast ? 1.5 : 0.75;
+        ctx.stroke();
         ctx.beginPath();
         ctx.moveTo(s.x - 2.1, s.y - pr - 2.4);
         ctx.lineTo(s.x, s.y - pr - 0.5);
@@ -306,10 +310,16 @@
         ctx.closePath();
         ctx.fillStyle = '#00f5d4'; ctx.fill();
       } else if (this.showNames && this._hasRoom(game, s)) {
-        ctx.font = '700 2.5px ui-monospace, Menlo, monospace';
+        // These are people the player has met, so they have to be readable:
+        // brighter, outlined against the glow, and clear of the body.
+        var ly = s.y - r - 2.2;
+        ctx.font = '700 2.6px ui-monospace, Menlo, monospace';
         ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-        ctx.fillStyle = 'rgba(242,238,252,.32)';
-        ctx.fillText(s.name, s.x, s.y - r - 1.4);
+        ctx.lineWidth = 0.9;
+        ctx.strokeStyle = 'rgba(4,3,9,.85)';
+        ctx.strokeText(s.name, s.x, ly);
+        ctx.fillStyle = this.contrast ? 'rgba(238,236,250,.95)' : 'rgba(206,200,232,.72)';
+        ctx.fillText(s.name, s.x, ly);
       }
     }
     ctx.restore();
@@ -325,10 +335,12 @@
       var ly = this.toScreenY(s.y - s.radius() - 1.4);
       if (ly > this.coachBand[0] && ly < this.coachBand[1]) return false;
     }
+    // Deterministic: when two labels would collide, the lower-indexed soul keeps
+    // its name. Suppressing both made labels flicker in and out frame to frame.
     for (var i = 0; i < game.souls.length; i++) {
       var o = game.souls[i];
       if (o === s || !o.alive) continue;
-      if (Math.abs(o.x - s.x) < 13 && Math.abs(o.y - s.y) < 7) return false;
+      if (Math.abs(o.x - s.x) < 13 && Math.abs(o.y - s.y) < 7 && o.id < s.id) return false;
     }
     return true;
   };

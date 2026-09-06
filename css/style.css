@@ -84,6 +84,17 @@ html, body {
     rgba(7,6,13,.55) 100%);
 }
 #results { background: rgba(7,6,13,.28); transition: background .9s ease .2s; }
+/* The arena stays visible behind the reveal, but the one line the whole game
+   exists for cannot be read across a glowing ring. Give it its own plate. */
+.reveal {
+  /* The gradient has to reach zero INSIDE the element, or the box's own edge
+     shows up as a hard seam drawn across the arena. */
+  background: radial-gradient(78% 66% at 50% 44%,
+              rgba(7,6,13,.96) 0%, rgba(7,6,13,.92) 34%,
+              rgba(7,6,13,.62) 68%, rgba(7,6,13,0) 100%);
+  padding: 34px 14px 40px;
+  margin: -20px 0;
+}
 #results.settled { background: radial-gradient(120% 80% at 50% 8%, #1a1030 0%, #07060d 62%); }
 #results .strip, #results .stats, #results .btnrow, #results #btn-menu, #results #share-note {
   /* pointer-events matters as much as opacity here: without it the SHARE and
@@ -178,6 +189,14 @@ html, body {
 .rule-ico[data-ico=tap]   { border: 3px solid var(--cyan); border-radius: 50%; background: radial-gradient(circle, var(--cyan) 0 22%, transparent 22%); }
 .rule-ico[data-ico=skull] { background: var(--cyan); clip-path: polygon(50% 0,88% 22%,88% 60%,68% 74%,68% 100%,32% 100%,32% 74%,12% 60%,12% 22%); }
 
+/* A fade at the fold so a cut-off card reads as "more below" rather than
+   as clipped text. */
+#how::after, #settings::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 64px;
+  background: linear-gradient(to top, var(--void), rgba(7,6,13,0));
+  pointer-events: none;
+}
+
 /* ---------- settings ---------- */
 .row {
   display: flex; align-items: center; justify-content: space-between;
@@ -205,7 +224,7 @@ html, body {
   position: absolute; left: 0; right: 0;
   top: max(10px, env(safe-area-inset-top));
   display: flex; justify-content: space-between; align-items: flex-start;
-  padding: 0 14px;
+  padding: 0 calc(14px + env(safe-area-inset-right)) 0 calc(14px + env(safe-area-inset-left));
 }
 .hud-cell { min-width: 74px; }
 .hud-mid { text-align: center; flex: 1; display: flex; align-items: flex-start; justify-content: center; }
@@ -251,7 +270,13 @@ html, body {
   text-align: center; padding: 0 12px;
   font-size: 9px; letter-spacing: .2em; color: var(--dim);
 }
-.phase.warn { color: var(--crimson); animation: pulse .6s ease-in-out infinite; }
+.phase.warn {
+  /* Was dark crimson at 9px behind the ring's own red glow — the most urgent
+     message on screen was the least readable thing on it. */
+  color: #ff8fa3; font-size: 10.5px; font-weight: 700;
+  text-shadow: 0 1px 6px #000, 0 0 12px rgba(0,0,0,.9);
+  animation: pulse .9s ease-in-out infinite;
+}
 .pip {
   width: 7px; height: 7px; border-radius: 50%;
   background: #2a2140; transition: background .25s ease, transform .25s ease, box-shadow .25s ease;
@@ -263,18 +288,25 @@ html, body {
 /* Burn rate: makes "the fuel is the poison" legible on run 1 and still true on
    run 400 — it visibly climbs the moment you brighten. */
 #burnline-hud {
-  position: absolute; left: 14px; right: 14px;
-  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 13px);
+  position: absolute;
+  left: calc(14px + env(safe-area-inset-left));
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 17px);
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: 9px; letter-spacing: .18em; color: var(--dim);
 }
 .burn-rate { font-weight: 800; font-size: 12px; letter-spacing: .04em; transition: color .2s linear; }
+#hud.out .burn-rate { color: var(--dim); }
+#hud.out #flamebar { opacity: .35; }
+#hud.out .letgo { color: var(--cyan); border-color: rgba(0,245,212,.45); }
 .hud-sub { font-size: 13px; color: var(--text); opacity: .85; letter-spacing: .08em; }
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
 
 #flamebar {
-  position: absolute; left: 14px; right: 14px;
-  bottom: max(12px, env(safe-area-inset-bottom));
+  position: absolute;
+  left: calc(14px + env(safe-area-inset-left));
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 4px);
   height: 7px; border-radius: 4px; background: rgba(255,255,255,.09); overflow: hidden;
 }
 #flamebar-fill { height: 100%; width: 50%; border-radius: 4px; transition: background .2s linear; }
@@ -305,8 +337,16 @@ html, body {
   color: var(--text); background: rgba(20,15,36,.8);
   border: 1px solid var(--line); border-radius: 13px; padding: 15px 12px;
 }
-.nameinput:focus { outline: none; border-color: var(--cyan); }
+.nameinput:focus {
+  outline: none; border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(0,245,212,.16);
+}
 .nameinput::placeholder { color: #3a3055; letter-spacing: .1em; }
+.namewrap { width: 100%; position: relative; }
+.namecount {
+  position: absolute; right: 12px; bottom: 8px;
+  font-size: 10px; letter-spacing: .1em; color: var(--dim); pointer-events: none;
+}
 
 /* ---------- countdown ---------- */
 .count {

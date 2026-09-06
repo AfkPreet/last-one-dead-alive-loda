@@ -140,9 +140,9 @@
 
     // Night one states the rule; after that the tagline names who you hold.
     if (ledger.nights > 0 && ledger.carrying) {
-      els.tag.innerHTML = 'You are carrying <b>' +
-        (ledger.carrying.name || 'someone with no name left') + '</b>.<br>' +
-        'Carry it to the end of the night.';
+      els.tag.innerHTML = ledger.carrying.name
+        ? 'You are carrying <b>' + ledger.carrying.name + '</b>.<br>Carry it to the end of the night.'
+        : 'You are carrying someone who<br>left no name.<b> Carry it to the end.</b>';
     }
   }
 
@@ -150,6 +150,8 @@
   var coachSeen = Store.get('coached', 0);
   var coachQueue = [], coachUntil = 0;
   function coach(msg, secs) {
+    // Nothing to teach a lamp that has already gone out.
+    if (game && game.player && !game.player.alive) return;
     coachQueue.push([msg, secs || 2.6]);
   }
   function pumpCoach(now) {
@@ -342,7 +344,8 @@
 
     drainEvents();
     updateHud();
-    if (game.state !== 'countdown') pumpCoach(now / 1000);
+    if (game.state !== 'countdown' && game.player.alive) pumpCoach(now / 1000);
+    else if (!game.player.alive) { els.coach.classList.remove('show'); renderer.coachBand = null; }
 
     renderer.draw(game, input, now / 1000);
   }
@@ -409,9 +412,18 @@
 
     // The needle that makes "the fuel is the poison" legible: it climbs the
     // instant you brighten, so eating is visibly a trade, not a reward.
-    var rate = game.playerBurnRate();
-    els.burn.textContent = '-' + rate.toFixed(1) + '/s';
-    els.burn.style.color = global.Juice.rampHex(Game.FLAME_RAMP, Math.min(1, rate / 9), 10);
+    var out = !p.alive;
+    els.hud.classList.toggle('out', out);
+    if (out) {
+      els.burn.textContent = 'OUT';
+      els.burn.style.color = '';
+      $('btn-letgo').firstChild.textContent = 'SKIP';
+    } else {
+      var rate = game.playerBurnRate();
+      els.burn.textContent = '-' + rate.toFixed(1) + '/s';
+      els.burn.style.color = global.Juice.rampHex(Game.FLAME_RAMP, Math.min(1, rate / 9), 10);
+      $('btn-letgo').firstChild.textContent = 'LET GO';
+    }
 
     var label, warn = false;
     if (!p.alive) { label = 'YOU ARE OUT — TAP TO SKIP'; warn = true; }
@@ -429,31 +441,32 @@
    * same line — two players comparing the same daily see the same joke. */
   var DEATH_LINES = {
     letGo: [
-      'You had a whole match left and you spent it on a button.',
-      'On purpose. Respect, sort of.',
-      'That was always allowed. That was the point.'
+      'You had a whole night and you spent it on a button.',
+      'You set it down. That was always allowed.',
+      'Nobody made you carry it.'
     ],
     first: [
-      'First out. Someone has to be.',
-      'You were the brightest thing here. Congratulations.',
-      'Twelve souls, and the dark picked you.'
+      'First out. Somebody has to be.',
+      'You were the brightest thing here. That is what did it.',
+      'Twelve lamps, and the dark picked you.'
     ],
     bright: [
-      'Too much life. Classic mistake.',
+      'You were holding too much to last.',
       'Something dimmer wanted what you were carrying.',
-      'You made yourself the biggest fire in the room.'
+      'You made yourself the biggest fire in the field.'
     ],
     dim: [
-      'Ran out. The boring one.',
+      'You ran out. The quiet way.',
       'You were almost nothing, and then you were.',
       'The dark did most of the work.'
     ],
     close: [
       'One more second.',
-      'Second-last is just first-loser with extra steps.',
-      'You nearly had it. Nearly.'
+      'Second-last is still not last.',
+      'It nearly got there.'
     ]
   };
+
   function deathLine(res) {
     var r = new R.Rng(res.seed + ':epitaph:' + res.rank);
     var pool = res.letGo ? DEATH_LINES.letGo
@@ -504,7 +517,10 @@
       // the player is still on the results screen. Otherwise this ambushes
       // them a second after they have already walked back to the menu.
       revealTimers.push(setTimeout(function () {
-        if (screen === 'results') show('naming');
+        if (screen !== 'results') return;
+        show('naming');
+        // It is a form: put the caret in it.
+        try { els.nameInput.focus(); } catch (e) {}
       }, 4600));
     }
     // The player's own link should carry their run, not the challenger's.
@@ -543,9 +559,9 @@
       // remaining order is a guess and stating it as fact would be a lie.
       var winner = (!res.cut && res.standings && res.standings[0]) ? res.standings[0].name : null;
       line('r1', res.letGo ? 'YOU LET GO.' : 'YOU WENT OUT EARLY.', 0);
-      var fact = night && night.carriedName
-        ? night.carriedName + ' went out in your hands.'
-        : 'It went out in your hands.';
+      var who = night && night.carriedName ? night.carriedName : 'It';
+      var fact = res.letGo ? 'You set ' + (night && night.carriedName ? night.carriedName : 'it') + ' down.'
+                           : who + ' went out in your hands.';
       fact += '<br><span class="dim">' +
         (res.outlasted === 1 ? 'One lamp outlasted you.'
                              : res.outlasted + ' lamps outlasted you.') +
@@ -675,6 +691,9 @@
   els.nameInput.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); finishNaming(els.nameInput.value); }
   });
+  els.nameInput.addEventListener('input', function () {
+    $('name-count').textContent = els.nameInput.value.length + '/12';
+  });
 
   $('btn-play').addEventListener('click', function () { A.unlock(); A.play('ui'); startMatch(); });
   $('btn-again').addEventListener('click', function () { A.play('ui'); startMatch(); });
@@ -754,6 +773,7 @@
   function startPreview() {
     cancelAnimationFrame(previewId);
     previewGame = new Game({ seed: 'menu-' + (previewN++), mode: 'endless', auto: true });
+    namePreview(previewGame);
     previewGame.startPlay();
     previewT0 = performance.now();
     previewId = requestAnimationFrame(function tick(now) {
@@ -761,6 +781,7 @@
       previewId = requestAnimationFrame(tick);
       if (previewGame.state === 'done') {
         previewGame = new Game({ seed: 'menu-' + (previewN++), mode: 'endless', auto: true });
+        namePreview(previewGame);
         previewGame.startPlay();
       }
       previewGame.update(1 / 60, null);
@@ -768,6 +789,13 @@
       renderer.draw(previewGame, null, (now - previewT0) / 1000);
     });
   }
+  /** The idle arena behind the title has to be the same world the story is
+   *  about; a solemn line over a field of joke handles reads as an accident. */
+  function namePreview(g) {
+    var pool = global.Story.namePool(ledger, new R.Rng(g.seedStr + ':names'), Game.K.SOULS - 1);
+    for (var i = 1; i < g.souls.length; i++) g.souls[i].name = pool[i - 1];
+  }
+
   function stopPreview() {
     cancelAnimationFrame(previewId);
     previewId = 0;

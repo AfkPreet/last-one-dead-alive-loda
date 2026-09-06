@@ -148,9 +148,12 @@
     <div class="stack">
       <div class="naming-eyebrow">YOU REACHED THE END OF THE NIGHT</div>
       <h2 class="naming-q">WHAT DO WE CALL YOU?</h2>
-      <input id="name-input" class="nameinput" type="text" maxlength="12"
-             autocomplete="off" autocorrect="off" autocapitalize="characters"
-             spellcheck="false" placeholder="—">
+      <div class="namewrap">
+        <input id="name-input" class="nameinput" type="text" maxlength="12"
+               autocomplete="off" autocorrect="off" autocapitalize="characters"
+               spellcheck="false" placeholder="—" aria-label="Your name">
+        <span class="namecount" id="name-count">0/12</span>
+      </div>
       <p class="hint">From tonight your name is in the dark with the others.</p>
       <button id="btn-name-ok" class="btn btn-primary">THAT IS MY NAME</button>
       <button id="btn-name-skip" class="linkbtn">stay nameless</button>
