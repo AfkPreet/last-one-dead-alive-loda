@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LAST ONE DEAD</title>
+<meta name="description" content="Twelve souls. Everyone burns out. Win by being the last one to die. (Think about that for a second.)">
+<meta name="theme-color" content="#07060d">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Last One Dead">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:title" content="LAST ONE DEAD">
+<meta property="og:description" content="Twelve souls. Everyone burns out. Win by being the last one to die.">
+<meta property="og:image" content="https://afkpreet.github.io/last-one-dead-alive-loda/icons/og.png">
+<meta property="og:url" content="https://afkpreet.github.io/last-one-dead-alive-loda/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="LAST ONE DEAD">
+<meta name="twitter:description" content="Twelve souls. Everyone burns out. Win by being the last one to die.">
+<meta name="twitter:image" content="https://afkpreet.github.io/last-one-dead-alive-loda/icons/og.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="frame">
+  <canvas id="stage"></canvas>
+
+  <!-- ===================== IN-GAME HUD ===================== -->
+  <div id="hud" class="layer" aria-hidden="true">
+    <div class="hud-top">
+      <div class="hud-cell">
+        <div class="hud-label">SOULS BURNING</div>
+        <div class="hud-value" id="hud-alive">12</div>
+      </div>
+      <div class="hud-cell hud-mid">
+        <div class="hud-label" id="hud-phase-label">THE LIGHT HOLDS</div>
+        <div class="hud-sub" id="hud-clock">0:00</div>
+      </div>
+      <div class="hud-cell hud-right">
+        <!-- The game tells you to die, so it offers you death at all times.
+             Refusing this button for the whole match is the entire game. -->
+        <button id="btn-letgo" class="letgo">LET GO</button>
+      </div>
+    </div>
+    <div id="pips" class="pips" aria-hidden="true"></div>
+    <div id="burnline-hud">
+      <span class="burn-label">BURNING</span>
+      <span class="burn-rate" id="hud-burn">0.0/s</span>
+    </div>
+    <div id="flamebar"><div id="flamebar-fill"></div></div>
+    <div id="coach" class="coach"></div>
+  </div>
+
+  <!-- ===================== TITLE ===================== -->
+  <div id="menu" class="layer screen show">
+    <div class="stack">
+      <div class="logo">
+        <div class="logo-l1">LAST ONE</div>
+        <div class="logo-l2">DEAD</div>
+      </div>
+      <p class="tag">Twelve souls. Everybody burns out.<br><b>Win by dying last.</b></p>
+      <button id="btn-play" class="btn btn-primary">ENTER THE DARK</button>
+      <div class="seedline">
+        <span id="menu-seed">DAILY · DAY 1</span>
+        <button id="btn-mode" class="linkbtn">switch to endless</button>
+      </div>
+      <div class="menu-foot">
+        <button id="btn-how" class="linkbtn">how to die properly</button>
+        <button id="btn-settings" class="linkbtn">settings</button>
+      </div>
+      <div id="streakline" class="streakline"></div>
+    </div>
+  </div>
+
+  <!-- ===================== HOW TO ===================== -->
+  <div id="how" class="layer screen">
+    <div class="stack scroll">
+      <h2 class="h2">HOW TO DIE PROPERLY</h2>
+      <p class="lede">You are already dead. This is what is left of you:
+      a flame, going out. Everyone here is going out.<br><b>Be the last one to go.</b></p>
+      <div class="rule">
+        <div class="rule-ico" data-ico="spike"></div>
+        <div><b>Run <i>into</i> the spikes.</b><br><span class="dim">They are not hazards. They are the only fuel left.</span></div>
+      </div>
+      <div class="rule">
+        <div class="rule-ico" data-ico="burn"></div>
+        <div><b>Bright souls burn out faster.</b><br><span class="dim">Hoarding flame kills you. Running on fumes buys you time.</span></div>
+      </div>
+      <div class="rule">
+        <div class="rule-ico" data-ico="steal"></div>
+        <div><b>The dim eat the bright.</b><br><span class="dim">Touch a brighter soul and you tear the flame out of it. Being strong makes you prey.</span></div>
+      </div>
+      <div class="rule">
+        <div class="rule-ico" data-ico="ring"></div>
+        <div><b>The light is closing.</b><br><span class="dim">Outside it, the void strips your flame away. Speed comes from flame, so don't get caught slow and far.</span></div>
+      </div>
+      <div class="rule">
+        <div class="rule-ico" data-ico="tap"></div>
+        <div><b>Tap to dash.</b><br><span class="dim">It costs flame. You are spending life to move — that is the deal here.</span></div>
+      </div>
+      <div class="rule rule-key">
+        <div class="rule-ico" data-ico="skull"></div>
+        <div><b>You cannot win without dying.</b><br><span class="dim">The match ends when the last soul goes out. Make sure that soul is you. There is a <b>LET GO</b> button in the corner that ends you instantly. It is not a trick. Not pressing it is the game.</span></div>
+      </div>
+      <button id="btn-how-back" class="btn">GOT IT</button>
+    </div>
+  </div>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <div id="settings" class="layer screen">
+    <div class="stack scroll">
+      <h2 class="h2">SETTINGS</h2>
+      <label class="row"><span>Sound</span><input type="checkbox" id="set-sound" checked><i class="sw"></i></label>
+      <label class="row"><span>Haptics</span><input type="checkbox" id="set-haptics" checked><i class="sw"></i></label>
+      <label class="row"><span>Screen shake</span><input type="checkbox" id="set-shake" checked><i class="sw"></i></label>
+      <label class="row"><span>High contrast</span><input type="checkbox" id="set-contrast"><i class="sw"></i></label>
+      <label class="row"><span>Show soul names</span><input type="checkbox" id="set-names" checked><i class="sw"></i></label>
+      <div class="hint" id="haptic-note"></div>
+      <button id="btn-settings-back" class="btn">BACK</button>
+    </div>
+  </div>
+
+  <!-- ===================== RESULTS ===================== -->
+  <div id="results" class="layer screen">
+    <div class="stack">
+      <div id="res-reveal" class="reveal"></div>
+      <div id="res-strip" class="strip"></div>
+      <div id="res-stats" class="stats"></div>
+      <div class="btnrow">
+        <button id="btn-share" class="btn btn-primary">SHARE</button>
+        <button id="btn-again" class="btn">AGAIN</button>
+      </div>
+      <button id="btn-menu" class="linkbtn">back to the dark</button>
+      <div id="share-note" class="hint"></div>
+    </div>
+  </div>
+
+  <!-- ===================== COUNTDOWN / TOAST ===================== -->
+  <div id="countdown" class="layer count" aria-hidden="true"></div>
+  <div id="toast" class="toast"></div>
+</div>
+
+<script src="js/rng.js"></script>
+<script src="js/platform.js"></script>
+<script src="js/input.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/juice.js"></script>
+<script src="js/render.js"></script>
+<script src="js/game.js"></script>
+<script src="js/share.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

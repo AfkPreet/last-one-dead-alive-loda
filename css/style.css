@@ -1,0 +1,302 @@
+/* LAST ONE DEAD — UI chrome.
+ * Everything in the arena is drawn on canvas; this file is only the shell,
+ * the HUD and the menu screens. Mobile-first, portrait-locked by layout.
+ */
+
+:root {
+  --void:      #07060d;
+  --ink:       #0d0a17;
+  --panel:     #140f24;
+  --line:      #2a2140;
+  --text:      #f2eefc;
+  --dim:       #9a90b8;
+  --cyan:      #00f5d4;   /* "you" */
+  --crimson:   #ff2d55;   /* embers / danger */
+  --amber:     #ff9f1c;
+  --violet:    #7b2ff7;
+  --cold:      #4361ee;
+  --hot:       #fff3b0;
+  --shadow:    0 8px 32px rgba(0,0,0,.6);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; padding: 0;
+  height: 100%;
+  background: #000;
+  color: var(--text);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;              /* the game owns every gesture; scrollable
+                                      panels opt back in with pan-y below */
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+  text-rendering: optimizeLegibility;
+}
+
+/* The play frame: fills a phone, becomes a centred phone-shaped strip on desktop. */
+#frame {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: 100%;
+  height: 100%;
+  max-width: min(100vw, 56svh);          /* never wider than a tall phone */
+  max-height: 100svh;
+  background: var(--void);
+  overflow: hidden;
+  isolation: isolate;
+}
+@supports not (height: 100svh) {
+  #frame { max-width: min(100vw, 56vh); max-height: 100vh; }
+}
+
+#stage {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block;
+  touch-action: none;                     /* the joystick owns every gesture here */
+  cursor: crosshair;
+}
+
+.layer { position: absolute; inset: 0; }
+
+/* ---------- screens ---------- */
+.screen {
+  display: none;
+  background: radial-gradient(120% 80% at 50% 8%, #1a1030 0%, #07060d 62%);
+  z-index: 20;
+  padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+}
+.screen.show { display: flex; }
+#results { background: rgba(7,6,13,.28); transition: background .9s ease .2s; }
+#results.settled { background: radial-gradient(120% 80% at 50% 8%, #1a1030 0%, #07060d 62%); }
+#results .strip, #results .stats, #results .btnrow, #results #btn-menu, #results #share-note {
+  opacity: 0; transition: opacity .5s ease;
+}
+#results.settled .strip, #results.settled .stats, #results.settled .btnrow,
+#results.settled #btn-menu, #results.settled #share-note { opacity: 1; }
+.screen .stack {
+  margin: auto;
+  width: 100%;
+  max-width: 380px;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  text-align: center;
+}
+.screen .stack.scroll {
+  max-height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+/* ---------- title ---------- */
+.logo { line-height: .92; margin-bottom: 2px; }
+.logo-l1 {
+  font-size: clamp(28px, 9vw, 40px); font-weight: 700; letter-spacing: .34em;
+  color: var(--dim); text-indent: .34em;
+}
+.logo-l2 {
+  font-size: clamp(58px, 19vw, 86px); font-weight: 800; letter-spacing: .06em;
+  color: var(--text); text-indent: .06em;
+  text-shadow: 0 0 26px rgba(255,45,85,.55), 0 0 70px rgba(123,47,247,.4);
+}
+.tag { color: var(--dim); font-size: 13.5px; line-height: 1.6; margin: 0 0 4px; }
+.tag b { color: var(--text); }
+
+/* ---------- buttons ---------- */
+.btn {
+  appearance: none; border: 1px solid var(--line);
+  background: var(--panel); color: var(--text);
+  font: inherit; font-size: 15px; font-weight: 700; letter-spacing: .16em;
+  padding: 15px 26px; border-radius: 13px; width: 100%;
+  cursor: pointer; transition: transform .07s ease, background .15s ease, border-color .15s ease;
+}
+.btn:active { transform: scale(.97); background: #1d1636; }
+.btn-primary {
+  background: linear-gradient(160deg, #ff2d55, #7b2ff7);
+  border-color: transparent; color: #fff;
+  box-shadow: 0 6px 26px rgba(255,45,85,.32);
+}
+.btn-primary:active { background: linear-gradient(160deg, #e0264a, #6a29d8); }
+.btnrow { display: flex; gap: 10px; width: 100%; }
+.linkbtn {
+  appearance: none; background: none; border: 0; color: var(--dim);
+  font: inherit; font-size: 12px; letter-spacing: .08em; text-decoration: underline;
+  text-underline-offset: 3px; padding: 8px 6px; cursor: pointer;
+}
+.linkbtn:active { color: var(--text); }
+.menu-foot { display: flex; gap: 14px; }
+.seedline { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+#menu-seed { font-size: 11px; letter-spacing: .22em; color: var(--cyan); }
+.streakline { font-size: 11px; color: var(--dim); letter-spacing: .1em; min-height: 16px; }
+
+/* ---------- how-to ---------- */
+.h2 { font-size: 14px; letter-spacing: .3em; color: var(--dim); font-weight: 700; margin: 0 0 2px; }
+.lede { font-size: 12.5px; line-height: 1.65; color: var(--dim); margin: 0 0 2px; }
+.lede b { color: var(--text); }
+.rule {
+  display: flex; gap: 13px; align-items: flex-start; text-align: left;
+  background: rgba(20,15,36,.7); border: 1px solid var(--line);
+  border-radius: 13px; padding: 13px 14px; font-size: 13px; line-height: 1.5; width: 100%;
+}
+.rule-key { border-color: rgba(255,45,85,.5); background: rgba(255,45,85,.08); }
+.rule .dim { color: var(--dim); font-size: 12px; }
+.rule-ico { width: 26px; height: 26px; flex: 0 0 26px; border-radius: 7px; margin-top: 1px; }
+.rule-ico[data-ico=spike] { background: var(--crimson); clip-path: polygon(50% 0,61% 36%,98% 36%,68% 58%,79% 96%,50% 72%,21% 96%,32% 58%,2% 36%,39% 36%); }
+.rule-ico[data-ico=burn]  { background: radial-gradient(circle at 50% 62%, var(--hot), var(--amber) 45%, transparent 72%); }
+.rule-ico[data-ico=steal] { background: linear-gradient(90deg, var(--hot), var(--cold)); border-radius: 13px; }
+.rule-ico[data-ico=ring]  { border: 3px solid var(--violet); border-radius: 50%; background: transparent; }
+.rule-ico[data-ico=tap]   { border: 3px solid var(--cyan); border-radius: 50%; background: radial-gradient(circle, var(--cyan) 0 22%, transparent 22%); }
+.rule-ico[data-ico=skull] { background: var(--cyan); clip-path: polygon(50% 0,88% 22%,88% 60%,68% 74%,68% 100%,32% 100%,32% 74%,12% 60%,12% 22%); }
+
+/* ---------- settings ---------- */
+.row {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 13px 15px; font-size: 13.5px;
+  background: rgba(20,15,36,.7); border: 1px solid var(--line); border-radius: 13px;
+  cursor: pointer;
+}
+.row input { position: absolute; opacity: 0; pointer-events: none; }
+.row .sw {
+  width: 44px; height: 26px; border-radius: 13px; background: #2a2140;
+  position: relative; transition: background .18s ease; flex: 0 0 44px;
+}
+.row .sw::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--dim); transition: transform .18s ease, background .18s ease;
+}
+.row input:checked ~ .sw { background: rgba(0,245,212,.28); }
+.row input:checked ~ .sw::after { transform: translateX(18px); background: var(--cyan); }
+.hint { font-size: 11px; color: var(--dim); line-height: 1.5; }
+
+/* ---------- HUD ---------- */
+#hud { z-index: 10; pointer-events: none; opacity: 0; transition: opacity .25s ease; }
+#hud.show { opacity: 1; }
+.hud-top {
+  position: absolute; left: 0; right: 0;
+  top: max(10px, env(safe-area-inset-top));
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 0 14px;
+}
+.hud-cell { min-width: 74px; }
+.hud-mid { text-align: center; flex: 1; }
+.hud-right { text-align: right; }
+.hud-label { font-size: 8.5px; letter-spacing: .2em; color: var(--dim); }
+.hud-value { font-size: 21px; font-weight: 800; letter-spacing: .02em; line-height: 1.15; }
+.hud-right { display: flex; justify-content: flex-end; }
+
+/* The standing offer of death. Small, always reachable, no confirmation. */
+.letgo {
+  pointer-events: auto;
+  appearance: none; font: inherit; font-size: 10px; font-weight: 700;
+  letter-spacing: .18em; color: var(--dim);
+  background: rgba(20,15,36,.72); border: 1px solid var(--line);
+  border-radius: 9px; padding: 9px 11px; min-height: 34px; cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.letgo:active { color: var(--crimson); border-color: var(--crimson); background: rgba(255,45,85,.12); }
+
+/* One pip per soul. Removes every ordinal from the HUD — "#4" is unreadable in
+   a game where #1 means the opposite of what it means everywhere else. */
+.pips {
+  position: absolute; left: 0; right: 0;
+  top: calc(max(10px, env(safe-area-inset-top)) + 46px);
+  display: flex; justify-content: center; gap: 5px; padding: 0 14px;
+}
+.pip {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #2a2140; transition: background .25s ease, transform .25s ease, box-shadow .25s ease;
+}
+.pip.lit { background: var(--amber); box-shadow: 0 0 7px rgba(255,159,28,.75); }
+.pip.you { background: var(--cyan); box-shadow: 0 0 9px rgba(0,245,212,.85); transform: scale(1.5); }
+.pip.out { background: #241d38; box-shadow: none; transform: scale(.72); }
+
+/* Burn rate: makes "the fuel is the poison" legible on run 1 and still true on
+   run 400 — it visibly climbs the moment you brighten. */
+#burnline-hud {
+  position: absolute; left: 14px; right: 14px;
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 13px);
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 9px; letter-spacing: .18em; color: var(--dim);
+}
+.burn-rate { font-weight: 800; font-size: 12px; letter-spacing: .04em; transition: color .2s linear; }
+.hud-sub { font-size: 13px; color: var(--text); opacity: .85; letter-spacing: .08em; }
+#hud-phase-label.warn { color: var(--crimson); animation: pulse .6s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+#flamebar {
+  position: absolute; left: 14px; right: 14px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  height: 7px; border-radius: 4px; background: rgba(255,255,255,.09); overflow: hidden;
+}
+#flamebar-fill { height: 100%; width: 50%; border-radius: 4px; transition: background .2s linear; }
+
+.coach {
+  position: absolute; left: 16px; right: 16px; top: 34%;
+  text-align: center; font-size: 15px; font-weight: 700; letter-spacing: .12em;
+  line-height: 1.6; opacity: 0; transition: opacity .3s ease; pointer-events: none;
+  text-shadow: 0 2px 18px #000;
+}
+.coach.show { opacity: 1; }
+.coach em { color: var(--crimson); font-style: normal; }
+
+/* ---------- countdown ---------- */
+.count {
+  z-index: 15; display: flex; align-items: center; justify-content: center;
+  pointer-events: none; font-size: 88px; font-weight: 800; letter-spacing: .04em;
+  opacity: 0; text-shadow: 0 0 40px rgba(255,45,85,.6);
+}
+.count.tick { animation: countpop .62s ease-out; }
+@keyframes countpop {
+  0%   { opacity: 0; transform: scale(1.7); }
+  22%  { opacity: 1; transform: scale(1); }
+  70%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(.86); }
+}
+
+/* ---------- results ---------- */
+.reveal { min-height: 118px; display: flex; flex-direction: column; justify-content: center; gap: 7px; }
+.reveal .r1 {
+  font-size: clamp(30px, 10vw, 42px); font-weight: 800; letter-spacing: .04em;
+  opacity: 0; animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
+}
+.reveal .r2, .reveal .r3 {
+  font-size: 13.5px; color: var(--dim); letter-spacing: .06em; line-height: 1.55;
+  opacity: 0; animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
+}
+.reveal .r3 { color: var(--cyan); font-weight: 700; letter-spacing: .14em; font-size: 12.5px; }
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.win .r1 { color: var(--hot); text-shadow: 0 0 34px rgba(255,243,176,.5); }
+.lose .r1 { color: var(--text); }
+
+.strip { font-size: 19px; letter-spacing: 1.5px; line-height: 1.35; word-break: break-all; }
+.stats {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%;
+  font-size: 11.5px; color: var(--dim);
+}
+.stats div {
+  background: rgba(20,15,36,.7); border: 1px solid var(--line);
+  border-radius: 10px; padding: 9px 10px; text-align: left;
+}
+.stats b { display: block; color: var(--text); font-size: 17px; letter-spacing: .02em; margin-top: 2px; }
+
+/* ---------- toast ---------- */
+.toast {
+  position: absolute; left: 50%; transform: translate(-50%, 14px);
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 66px);
+  background: var(--panel); border: 1px solid var(--line); color: var(--text);
+  padding: 11px 17px; border-radius: 11px; font-size: 12px; letter-spacing: .06em;
+  opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
+  z-index: 40; max-width: 88%; text-align: center;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .count.tick { animation-duration: .3s; }
+  .reveal .r1, .reveal .r2, .reveal .r3 { animation-duration: .01s; }
+  #hud-phase-label.warn { animation: none; }
+}
