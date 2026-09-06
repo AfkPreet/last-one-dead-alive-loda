@@ -1,31 +1,62 @@
 # LAST ONE DEAD
+### THE VIGIL
 
-**Twelve souls. Everybody burns out. Win by being the last one to die.**
+**Twelve lamps. The oil in yours is not yours. The night ends when the last lamp goes out.**
 
 Play: **https://afkpreet.github.io/last-one-dead-alive-loda/**
 
 A one-thumb browser arena game. The name promises a battle royale, and the game
-opens by telling you the opposite: you are trying to *die*. Then it turns out
-those were never two different things — the last soul to go out is the last one
-alive. The game withholds that word until you win it.
+opens by telling you the opposite: you are trying to *go out*. Then it turns out
+those were never two different things — the last lamp to go out is the last one
+still burning. The game withholds that word until you win it.
 
 ---
 
-## The rules, and why each one is backwards
+## The story is in the constant
 
-Everything here is the inverse of what the genre trained you to do, and each
-inversion keeps costing you something for the whole match:
+Every soul in the arena starts at `FLAME_START: 40`. That number was in the code
+for a long time before anyone said what it meant.
+
+It means somebody poured forty into you and then went out.
+
+You are the twelfth lamp — the one without a name, holding oil that is not
+yours. The night ends when the last lamp does, and only that lamp is still
+burning when it ends. So being last is not a score. It is the only position from
+which the thing you were handed arrives anywhere. Go out at 0:19 and the night
+finishes in somebody else's hands.
+
+You earn a name by carrying a night to its end. From then on your name is in the
+pool the other eleven are drawn from, so play long enough and you walk into the
+dark and find yourself already standing there, carrying somebody.
+
+## The rules, and why each one is backwards
 
 | The genre | Here |
 |---|---|
 | Dodge the red spiky things | **Run into them.** They are the only fuel left. |
-| Collect health, stay topped up | **Flame is time at a worse and worse rate.** Your first 10 flame buy ~7 seconds; your tenth 10 buy ~2. |
-| The strongest player hunts | **The dim eat the bright.** Contact tears flame out of whoever is brighter, and a third of it is lost to the dark on the way. |
-| Survive to the end | **Go out last.** The match ends when the final soul does. You cannot win without dying. |
+| Collect health, stay topped up | **Flame is time at a worse and worse rate.** Your first 10 buy ~7 seconds; your tenth 10 buy ~2. |
+| The strongest player hunts | **The dim eat the bright.** Contact tears oil out of whoever is brighter — and a third of it spills and never burns at all. |
+| Survive to the end | **Go out last.** The night ends when the final lamp does. You cannot win without going out. |
 
 Speed and body size both scale with flame, so burning bright makes you fast and
 makes you a target. A shrinking ring of light punishes anyone who lingers in the
 dark. Tapping dashes, and the dash costs flame — you spend life to move.
+
+### What it costs to win
+
+The results screen reports two numbers side by side: **light given** and **light
+spilled**. They are exact, not estimates — the simulation tracks every unit of
+flame that drains (oil that became light) and every unit destroyed mid-transfer
+(oil that never will), and conservation holds to within 0.0000 across sixty
+matches.
+
+They are in tension, and the tension is measured, not asserted. You cannot last
+longest without taking, because the fuel runs out at 40s and a pacifist run goes
+out early. But every take destroys a third of what it touches, permanently. Over
+a full match the twelve lamps spill about a fifth of all the oil in the field.
+
+So the scoreboard tells you that you were the one still burning, and the column
+beside it tells you what that cost the light.
 
 ### The LET GO button
 
@@ -33,9 +64,9 @@ There is a button in the corner, for the whole match, that ends you instantly.
 Hold it for six-tenths of a second and you are out.
 
 It is not a trick and there is no confirmation dialog. The game says its goal is
-to die, so it offers you death at all times and means it. Most people press it
-once, go out ninth, and learn the entire design in a second: it never asked you
-to die — it asked you to die **last**. Refusing that button is the game.
+to go out, so it offers you that at all times and means it. Most people press it
+once, place ninth, and learn the entire design in a second: it never asked you
+to go out — it asked you to go out **last**. Refusing that button is the game.
 
 ---
 
@@ -102,6 +133,7 @@ code by `node tools/gen-assets.js`, so the repo ships nothing it cannot rebuild.
 | `js/render.js` | Canvas2D renderer and the camera that closes in with the ring |
 | `js/game.js` | The simulation |
 | `js/share.js` | Burnline encoding, share delivery, challenge links, streaks |
+| `js/story.js` | The ledger: who you are, who you carry, everyone you have met |
 | `js/main.js` | Screens, frame loop, HUD, onboarding, the reveal |
 
 ### Tools
