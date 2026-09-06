@@ -1,0 +1,3419 @@
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20fill%3D%22%25230a0812%22%2F%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2232%22%20r%3D%2222%22%20fill%3D%22none%22%20stroke%3D%22%25237b2ff7%22%20stroke-width%3D%223%22%2F%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2232%22%20r%3D%227%22%20fill%3D%22%2523fff3b0%22%2F%3E%3C%2Fsvg%3E">
+<title>LAST ONE DEAD</title>
+<style>
+/* LAST ONE DEAD &#x2014; UI chrome.
+ * Everything in the arena is drawn on canvas; this file is only the shell,
+ * the HUD and the menu screens. Mobile-first, portrait-locked by layout.
+ */
+
+:root {
+  --void:      #07060d;
+  --ink:       #0d0a17;
+  --panel:     #140f24;
+  --line:      #2a2140;
+  --text:      #f2eefc;
+  --dim:       #9a90b8;
+  --cyan:      #00f5d4;   /* "you" */
+  --crimson:   #ff2d55;   /* embers / danger */
+  --amber:     #ff9f1c;
+  --violet:    #7b2ff7;
+  --cold:      #4361ee;
+  --hot:       #fff3b0;
+  --shadow:    0 8px 32px rgba(0,0,0,.6);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0; padding: 0;
+  height: 100%;
+  background: #000;
+  color: var(--text);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;              /* the game owns every gesture; scrollable
+                                      panels opt back in with pan-y below */
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+  text-rendering: optimizeLegibility;
+}
+
+/* The play frame: fills a phone, becomes a centred phone-shaped strip on desktop. */
+#frame {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: 100%;
+  height: 100%;
+  max-width: min(100vw, 56svh);          /* never wider than a tall phone */
+  max-height: 100svh;
+  background: var(--void);
+  overflow: hidden;
+  isolation: isolate;
+}
+@supports not (height: 100svh) {
+  #frame { max-width: min(100vw, 56vh); max-height: 100vh; }
+}
+
+#stage {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block;
+  touch-action: none;                     /* the joystick owns every gesture here */
+  cursor: crosshair;
+}
+
+.layer { position: absolute; inset: 0; }
+
+/* ---------- screens ---------- */
+.screen {
+  display: none;
+  background: radial-gradient(120% 80% at 50% 8%, #1a1030 0%, #07060d 62%);
+  z-index: 20;
+  padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+}
+.screen.show { display: flex; }
+#results { background: rgba(7,6,13,.28); transition: background .9s ease .2s; }
+#results.settled { background: radial-gradient(120% 80% at 50% 8%, #1a1030 0%, #07060d 62%); }
+#results .strip, #results .stats, #results .btnrow, #results #btn-menu, #results #share-note {
+  opacity: 0; transition: opacity .5s ease;
+}
+#results.settled .strip, #results.settled .stats, #results.settled .btnrow,
+#results.settled #btn-menu, #results.settled #share-note { opacity: 1; }
+.screen .stack {
+  margin: auto;
+  width: 100%;
+  max-width: 380px;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  text-align: center;
+}
+.screen .stack.scroll {
+  max-height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+/* ---------- title ---------- */
+.logo { line-height: .92; margin-bottom: 2px; }
+.logo-l1 {
+  font-size: clamp(28px, 9vw, 40px); font-weight: 700; letter-spacing: .34em;
+  color: var(--dim); text-indent: .34em;
+}
+.logo-l2 {
+  font-size: clamp(58px, 19vw, 86px); font-weight: 800; letter-spacing: .06em;
+  color: var(--text); text-indent: .06em;
+  text-shadow: 0 0 26px rgba(255,45,85,.55), 0 0 70px rgba(123,47,247,.4);
+}
+.tag { color: var(--dim); font-size: 13.5px; line-height: 1.6; margin: 0 0 4px; }
+.tag b { color: var(--text); }
+
+/* ---------- buttons ---------- */
+.btn {
+  appearance: none; border: 1px solid var(--line);
+  background: var(--panel); color: var(--text);
+  font: inherit; font-size: 15px; font-weight: 700; letter-spacing: .16em;
+  padding: 15px 26px; border-radius: 13px; width: 100%;
+  cursor: pointer; transition: transform .07s ease, background .15s ease, border-color .15s ease;
+}
+.btn:active { transform: scale(.97); background: #1d1636; }
+.btn-primary {
+  background: linear-gradient(160deg, #ff2d55, #7b2ff7);
+  border-color: transparent; color: #fff;
+  box-shadow: 0 6px 26px rgba(255,45,85,.32);
+}
+.btn-primary:active { background: linear-gradient(160deg, #e0264a, #6a29d8); }
+.btnrow { display: flex; gap: 10px; width: 100%; }
+.linkbtn {
+  appearance: none; background: none; border: 0; color: var(--dim);
+  font: inherit; font-size: 12px; letter-spacing: .08em; text-decoration: underline;
+  text-underline-offset: 3px; padding: 8px 6px; cursor: pointer;
+}
+.linkbtn:active { color: var(--text); }
+.menu-foot { display: flex; gap: 14px; }
+.seedline { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+#menu-seed { font-size: 11px; letter-spacing: .22em; color: var(--cyan); }
+.streakline { font-size: 11px; color: var(--dim); letter-spacing: .1em; min-height: 16px; }
+
+/* ---------- how-to ---------- */
+.h2 { font-size: 14px; letter-spacing: .3em; color: var(--dim); font-weight: 700; margin: 0 0 2px; }
+.lede { font-size: 12.5px; line-height: 1.65; color: var(--dim); margin: 0 0 2px; }
+.lede b { color: var(--text); }
+.rule {
+  display: flex; gap: 13px; align-items: flex-start; text-align: left;
+  background: rgba(20,15,36,.7); border: 1px solid var(--line);
+  border-radius: 13px; padding: 13px 14px; font-size: 13px; line-height: 1.5; width: 100%;
+}
+.rule-key { border-color: rgba(255,45,85,.5); background: rgba(255,45,85,.08); }
+.rule .dim { color: var(--dim); font-size: 12px; }
+.rule-ico { width: 26px; height: 26px; flex: 0 0 26px; border-radius: 7px; margin-top: 1px; }
+.rule-ico[data-ico=spike] { background: var(--crimson); clip-path: polygon(50% 0,61% 36%,98% 36%,68% 58%,79% 96%,50% 72%,21% 96%,32% 58%,2% 36%,39% 36%); }
+.rule-ico[data-ico=burn]  { background: radial-gradient(circle at 50% 62%, var(--hot), var(--amber) 45%, transparent 72%); }
+.rule-ico[data-ico=steal] { background: linear-gradient(90deg, var(--hot), var(--cold)); border-radius: 13px; }
+.rule-ico[data-ico=ring]  { border: 3px solid var(--violet); border-radius: 50%; background: transparent; }
+.rule-ico[data-ico=tap]   { border: 3px solid var(--cyan); border-radius: 50%; background: radial-gradient(circle, var(--cyan) 0 22%, transparent 22%); }
+.rule-ico[data-ico=skull] { background: var(--cyan); clip-path: polygon(50% 0,88% 22%,88% 60%,68% 74%,68% 100%,32% 100%,32% 74%,12% 60%,12% 22%); }
+
+/* ---------- settings ---------- */
+.row {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 13px 15px; font-size: 13.5px;
+  background: rgba(20,15,36,.7); border: 1px solid var(--line); border-radius: 13px;
+  cursor: pointer;
+}
+.row input { position: absolute; opacity: 0; pointer-events: none; }
+.row .sw {
+  width: 44px; height: 26px; border-radius: 13px; background: #2a2140;
+  position: relative; transition: background .18s ease; flex: 0 0 44px;
+}
+.row .sw::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--dim); transition: transform .18s ease, background .18s ease;
+}
+.row input:checked ~ .sw { background: rgba(0,245,212,.28); }
+.row input:checked ~ .sw::after { transform: translateX(18px); background: var(--cyan); }
+.hint { font-size: 11px; color: var(--dim); line-height: 1.5; }
+
+/* ---------- HUD ---------- */
+#hud { z-index: 10; pointer-events: none; opacity: 0; transition: opacity .25s ease; }
+#hud.show { opacity: 1; }
+.hud-top {
+  position: absolute; left: 0; right: 0;
+  top: max(10px, env(safe-area-inset-top));
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 0 14px;
+}
+.hud-cell { min-width: 74px; }
+.hud-mid { text-align: center; flex: 1; }
+.hud-right { text-align: right; }
+.hud-label { font-size: 8.5px; letter-spacing: .2em; color: var(--dim); }
+.hud-value { font-size: 21px; font-weight: 800; letter-spacing: .02em; line-height: 1.15; }
+.hud-right { display: flex; justify-content: flex-end; }
+
+/* The standing offer of death. Small, always reachable, no confirmation. */
+.letgo {
+  pointer-events: auto;
+  appearance: none; font: inherit; font-size: 10px; font-weight: 700;
+  letter-spacing: .18em; color: var(--dim);
+  background: rgba(20,15,36,.72); border: 1px solid var(--line);
+  border-radius: 9px; padding: 9px 11px; min-height: 34px; cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.letgo:active { color: var(--crimson); border-color: var(--crimson); background: rgba(255,45,85,.12); }
+/* Held, not tapped: the offer stays honest and un-dialogged, but a thumb that
+   brushes the corner mid-panic doesn't end the run. */
+.letgo { position: relative; overflow: hidden; }
+.letgo::before {
+  content: ""; position: absolute; inset: 0;
+  background: var(--crimson); opacity: .28;
+  transform: scaleX(0); transform-origin: left center;
+}
+.letgo.arming { color: var(--crimson); border-color: var(--crimson); }
+.letgo.arming::before { transform: scaleX(1); transition: transform .6s linear; }
+.letgo > span { position: relative; }
+
+/* One pip per soul. Removes every ordinal from the HUD &#x2014; "#4" is unreadable in
+   a game where #1 means the opposite of what it means everywhere else. */
+.pips {
+  position: absolute; left: 0; right: 0;
+  top: calc(max(10px, env(safe-area-inset-top)) + 46px);
+  display: flex; justify-content: center; gap: 5px; padding: 0 14px;
+}
+.pip {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #2a2140; transition: background .25s ease, transform .25s ease, box-shadow .25s ease;
+}
+.pip.lit { background: var(--amber); box-shadow: 0 0 7px rgba(255,159,28,.75); }
+.pip.you { background: var(--cyan); box-shadow: 0 0 9px rgba(0,245,212,.85); transform: scale(1.5); }
+.pip.out { background: #241d38; box-shadow: none; transform: scale(.72); }
+
+/* Burn rate: makes "the fuel is the poison" legible on run 1 and still true on
+   run 400 &#x2014; it visibly climbs the moment you brighten. */
+#burnline-hud {
+  position: absolute; left: 14px; right: 14px;
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 13px);
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 9px; letter-spacing: .18em; color: var(--dim);
+}
+.burn-rate { font-weight: 800; font-size: 12px; letter-spacing: .04em; transition: color .2s linear; }
+.hud-sub { font-size: 13px; color: var(--text); opacity: .85; letter-spacing: .08em; }
+#hud-phase-label.warn { color: var(--crimson); animation: pulse .6s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+#flamebar {
+  position: absolute; left: 14px; right: 14px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  height: 7px; border-radius: 4px; background: rgba(255,255,255,.09); overflow: hidden;
+}
+#flamebar-fill { height: 100%; width: 50%; border-radius: 4px; transition: background .2s linear; }
+
+.coach {
+  position: absolute; left: 16px; right: 16px; top: 34%;
+  text-align: center; font-size: 15px; font-weight: 700; letter-spacing: .12em;
+  line-height: 1.6; opacity: 0; transition: opacity .3s ease; pointer-events: none;
+  text-shadow: 0 2px 18px #000;
+}
+.coach.show { opacity: 1; }
+.coach em { color: var(--crimson); font-style: normal; }
+
+/* ---------- countdown ---------- */
+.count {
+  z-index: 15; display: flex; align-items: center; justify-content: center;
+  pointer-events: none; font-size: 88px; font-weight: 800; letter-spacing: .04em;
+  opacity: 0; text-shadow: 0 0 40px rgba(255,45,85,.6);
+}
+.count.tick { animation: countpop .62s ease-out; }
+@keyframes countpop {
+  0%   { opacity: 0; transform: scale(1.7); }
+  22%  { opacity: 1; transform: scale(1); }
+  70%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(.86); }
+}
+
+/* ---------- results ---------- */
+.reveal { min-height: 132px; display: flex; flex-direction: column; justify-content: center; gap: 7px; }
+.reveal .r1 {
+  font-size: clamp(30px, 10vw, 42px); font-weight: 800; letter-spacing: .04em;
+  opacity: 0; animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
+}
+.reveal .r2, .reveal .r3 {
+  font-size: 13.5px; color: var(--dim); letter-spacing: .06em; line-height: 1.55;
+  opacity: 0; animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
+}
+.reveal .r3 { color: var(--cyan); font-weight: 700; letter-spacing: .14em; font-size: 12.5px; }
+.reveal .r4 {
+  font-size: 12px; color: var(--dim); opacity: 0; font-style: italic; letter-spacing: .02em;
+  animation: rise .5s cubic-bezier(.2,.9,.3,1) forwards;
+}
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.win .r1 { color: var(--hot); text-shadow: 0 0 34px rgba(255,243,176,.5); }
+.lose .r1 { color: var(--text); }
+
+.strip { font-size: 19px; letter-spacing: 1.5px; line-height: 1.35; word-break: break-all; }
+.stats {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%;
+  font-size: 11.5px; color: var(--dim);
+}
+.stats div {
+  background: rgba(20,15,36,.7); border: 1px solid var(--line);
+  border-radius: 10px; padding: 9px 10px; text-align: left;
+}
+.stats b { display: block; color: var(--text); font-size: 17px; letter-spacing: .02em; margin-top: 2px; }
+
+/* ---------- toast ---------- */
+.toast {
+  position: absolute; left: 50%; transform: translate(-50%, 14px);
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 66px);
+  background: var(--panel); border: 1px solid var(--line); color: var(--text);
+  padding: 11px 17px; border-radius: 11px; font-size: 12px; letter-spacing: .06em;
+  opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
+  z-index: 40; max-width: 88%; text-align: center;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .count.tick { animation-duration: .3s; }
+  .reveal .r1, .reveal .r2, .reveal .r3 { animation-duration: .01s; }
+  #hud-phase-label.warn { animation: none; }
+}
+</style>
+<div id="frame">
+  <canvas id="stage"></canvas>
+
+  <!-- ===================== IN-GAME HUD ===================== -->
+  <div id="hud" class="layer" aria-hidden="true">
+    <div class="hud-top">
+      <div class="hud-cell">
+        <div class="hud-label">SOULS BURNING</div>
+        <div class="hud-value" id="hud-alive">12</div>
+      </div>
+      <div class="hud-cell hud-mid">
+        <div class="hud-label" id="hud-phase-label">THE LIGHT HOLDS</div>
+        <div class="hud-sub" id="hud-clock">0:00</div>
+      </div>
+      <div class="hud-cell hud-right">
+        <!-- The game tells you to die, so it offers you death at all times.
+             Refusing this button for the whole match is the entire game. -->
+        <button id="btn-letgo" class="letgo"><span>LET GO</span></button>
+      </div>
+    </div>
+    <div id="pips" class="pips" aria-hidden="true"></div>
+    <div id="burnline-hud">
+      <span class="burn-label">BURNING</span>
+      <span class="burn-rate" id="hud-burn">0.0/s</span>
+    </div>
+    <div id="flamebar"><div id="flamebar-fill"></div></div>
+    <div id="coach" class="coach"></div>
+  </div>
+
+  <!-- ===================== TITLE ===================== -->
+  <div id="menu" class="layer screen show">
+    <div class="stack">
+      <div class="logo">
+        <div class="logo-l1">LAST ONE</div>
+        <div class="logo-l2">DEAD</div>
+      </div>
+      <p class="tag">Twelve souls. Everybody burns out.<br><b>Win by dying last.</b></p>
+      <button id="btn-play" class="btn btn-primary">ENTER THE DARK</button>
+      <div class="seedline">
+        <span id="menu-seed">DAILY &#xb7; DAY 1</span>
+        <button id="btn-mode" class="linkbtn">switch to endless</button>
+      </div>
+      <div class="menu-foot">
+        <button id="btn-how" class="linkbtn">how to die properly</button>
+        <button id="btn-settings" class="linkbtn">settings</button>
+      </div>
+      <div id="streakline" class="streakline"></div>
+    </div>
+  </div>
+
+  <!-- ===================== HOW TO ===================== -->
+  <div id="how" class="layer screen">
+    <div class="stack scroll">
+      <h2 class="h2">HOW TO DIE PROPERLY</h2>
+      <p class="lede">You are already dead. This is what is left of you:
+      a flame, going out. Everyone here is going out.<br><b>Be the last one to go.</b></p>
+      <div class="rule">
+        <div class="rule-ico" data-ico="spike"></div>
+        <div><b>Run <i>into</i> the spikes.</b><br><span class="dim">They are not hazards. They are the only fuel left.</span></div>
+      </div>
+      <div class="rule">
+        <div class="rule-ico" data-ico="burn"></div>
+        <div><b>Flame is time, at a worse and worse rate.</b><br><span class="dim">Your first 10 flame buy about 7 seconds. Your tenth 10 buy about 2. The brighter you burn, the more you pay per second alive &#x2014; watch the rate climb as you eat.</span></div>
+      </div>
+      <div class="rule">
+        <div class="rule-ico" data-ico="steal"></div>
+        <div><b>The dim eat the bright.</b><br><span class="dim">Touch a brighter soul and you tear the flame straight out of it &#x2014; and a third of it is lost to the dark on the way. Being the biggest fire here makes you food.</span></div>
+      </div>
+      <div class="rule">
+        <div class="rule-ico" data-ico="ring"></div>
+        <div><b>The light is closing.</b><br><span class="dim">Outside it, the void strips your flame away. Speed comes from flame, so don't get caught slow and far.</span></div>
+      </div>
+      <div class="rule">
+        <div class="rule-ico" data-ico="tap"></div>
+        <div><b>Tap to dash.</b><br><span class="dim">It costs flame. You are spending life to move &#x2014; that is the deal here.</span></div>
+      </div>
+      <div class="rule rule-key">
+        <div class="rule-ico" data-ico="skull"></div>
+        <div><b>You cannot win without dying.</b><br><span class="dim">The match ends when the last soul goes out. Make sure that soul is you. There is a <b>LET GO</b> button in the corner that ends you instantly. It is not a trick. Not pressing it is the game.</span></div>
+      </div>
+      <button id="btn-how-back" class="btn">GOT IT</button>
+    </div>
+  </div>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <div id="settings" class="layer screen">
+    <div class="stack scroll">
+      <h2 class="h2">SETTINGS</h2>
+      <label class="row"><span>Sound</span><input type="checkbox" id="set-sound" checked><i class="sw"></i></label>
+      <label class="row"><span>Haptics</span><input type="checkbox" id="set-haptics" checked><i class="sw"></i></label>
+      <label class="row"><span>Screen shake</span><input type="checkbox" id="set-shake" checked><i class="sw"></i></label>
+      <label class="row"><span>High contrast</span><input type="checkbox" id="set-contrast"><i class="sw"></i></label>
+      <label class="row"><span>Show soul names</span><input type="checkbox" id="set-names" checked><i class="sw"></i></label>
+      <div class="hint" id="haptic-note"></div>
+      <button id="btn-settings-back" class="btn">BACK</button>
+    </div>
+  </div>
+
+  <!-- ===================== RESULTS ===================== -->
+  <div id="results" class="layer screen">
+    <div class="stack">
+      <div id="res-reveal" class="reveal"></div>
+      <div id="res-strip" class="strip"></div>
+      <div id="res-stats" class="stats"></div>
+      <div class="btnrow">
+        <button id="btn-share" class="btn btn-primary">SHARE</button>
+        <button id="btn-again" class="btn">AGAIN</button>
+      </div>
+      <button id="btn-menu" class="linkbtn">back to the dark</button>
+      <div id="share-note" class="hint"></div>
+    </div>
+  </div>
+
+  <!-- ===================== COUNTDOWN / TOAST ===================== -->
+  <div id="countdown" class="layer count" aria-hidden="true"></div>
+  <div id="toast" class="toast"></div>
+</div>
+<script>
+/* ===== js/rng.js ===== */
+/* rng.js \u2014 deterministic pseudo-randomness.
+ * Every gameplay-relevant random number in this game comes from here so that a given
+ * seed always replays the exact same match. Math.random() is banned in gameplay code
+ * (see tools/check-determinism.sh).
+ */
+(function (global) {
+  'use strict';
+
+  /* mulberry32: tiny, fast, statistically fine for a game. */
+  function mulberry32(a) {
+    return function () {
+      a |= 0;
+      a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* xmur3 string hash -> 32-bit seed. Lets us seed from arbitrary text ("2026-09-05"). */
+  function hashString(str) {
+    var h = 1779033703 ^ str.length;
+    for (var i = 0; i < str.length; i++) {
+      h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+      h = (h << 13) | (h >>> 19);
+    }
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return (h ^ (h >>> 16)) >>> 0;
+  }
+
+  function Rng(seed) {
+    if (typeof seed === 'string') seed = hashString(seed);
+    this.seed = seed >>> 0;
+    this._next = mulberry32(this.seed);
+  }
+
+  Rng.prototype.float = function () { return this._next(); };
+  Rng.prototype.range = function (lo, hi) { return lo + this._next() * (hi - lo); };
+  Rng.prototype.int = function (lo, hi) { return Math.floor(lo + this._next() * (hi - lo + 1)); };
+  Rng.prototype.bool = function (p) { return this._next() < (p === undefined ? 0.5 : p); };
+  Rng.prototype.pick = function (arr) { return arr[Math.floor(this._next() * arr.length)]; };
+  Rng.prototype.angle = function () { return this._next() * Math.PI * 2; };
+  Rng.prototype.sign = function () { return this._next() < 0.5 ? -1 : 1; };
+  Rng.prototype.shuffle = function (arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(this._next() * (i + 1));
+      var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+    return arr;
+  };
+  /* Fork a child stream so adding a new consumer never shifts an existing one's sequence. */
+  Rng.prototype.fork = function (tag) {
+    return new Rng((hashString(tag) ^ Math.imul(this.seed, 2654435761)) >>> 0);
+  };
+
+  /* ---- Seed words: short, memorable, URL-safe seed strings -------------------- */
+  var W1 = ['ash', 'dusk', 'void', 'ember', 'grim', 'null', 'pale', 'rust', 'sable', 'bleak',
+            'hush', 'coil', 'wisp', 'murk', 'char', 'gloam'];
+  var W2 = ['moth', 'wick', 'husk', 'bone', 'lamp', 'iris', 'gale', 'reef', 'thorn', 'quill',
+            'vein', 'pyre', 'kiln', 'drift', 'omen', 'spur'];
+
+  function seedToWords(seed) {
+    seed = seed >>> 0;
+    return W1[seed % W1.length] + '-' + W2[(seed >>> 8) % W2.length] + '-' + ((seed >>> 16) % 100);
+  }
+
+  /* ---- Daily seed -------------------------------------------------------------
+   * Local-date based (not UTC) so "today's run" matches the player's actual today.
+   * Day 1 = 2026-01-01. */
+  var EPOCH = Date.UTC(2026, 0, 1);
+
+  function localDateKey(d) {
+    d = d || new Date();
+    var m = d.getMonth() + 1, day = d.getDate();
+    return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+  }
+
+  function dayNumber(d) {
+    d = d || new Date();
+    var local = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+    return Math.floor((local - EPOCH) / 86400000) + 1;
+  }
+
+  function msUntilNextLocalMidnight(d) {
+    d = d || new Date();
+    var next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 0, 0);
+    return next.getTime() - d.getTime();
+  }
+
+  global.RNG = {
+    Rng: Rng,
+    mulberry32: mulberry32,
+    hashString: hashString,
+    seedToWords: seedToWords,
+    localDateKey: localDateKey,
+    dayNumber: dayNumber,
+    msUntilNextLocalMidnight: msUntilNextLocalMidnight,
+    dailySeedString: function (d) { return 'LOD-' + localDateKey(d); }
+  };
+})(typeof self !== "undefined" ? self : this);
+
+/* ===== js/platform.js ===== */
+/* platform.js \u2014 the boring, load-bearing mobile-web plumbing.
+ * Canvas sizing under devicePixelRatio, viewport churn on iOS, page-hide pausing,
+ * haptics, and persistent storage that never throws.
+ */
+(function (global) {
+  'use strict';
+
+  var MAX_DPR = 2;                 // 3x on a phone buys nothing and costs 2.25x fill rate.
+
+  /* ---- Storage: private mode / blocked cookies must not crash the game ------- */
+  var Store = {
+    get: function (k, dflt) {
+      try {
+        var v = localStorage.getItem('lod.' + k);
+        return v === null ? dflt : JSON.parse(v);
+      } catch (e) { return dflt; }
+    },
+    set: function (k, v) {
+      try { localStorage.setItem('lod.' + k, JSON.stringify(v)); return true; }
+      catch (e) { return false; }
+    }
+  };
+
+  /* ---- Haptics --------------------------------------------------------------
+   * navigator.vibrate is Android-only; iOS Safari has no vibration API at all.
+   * Silently no-ops there rather than pretending. */
+  var hapticsOK = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+  function vibrate(pattern) {
+    if (!hapticsOK || !Store.get('haptics', true)) return;
+    try { navigator.vibrate(pattern); } catch (e) { /* some browsers throw on user-gesture rules */ }
+  }
+
+  /* ---- Canvas surface -------------------------------------------------------
+   * Keeps the backing store in device pixels and the drawing API in CSS pixels
+   * by pre-scaling the context. Game code only ever thinks in CSS pixels.
+   */
+  function Surface(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d', { alpha: false });
+    this.w = 0; this.h = 0; this.dpr = 1;
+    this.quality = 1;          // render-scale multiplier, dropped under load
+    this.onResize = null;
+    this._resize = this.resize.bind(this);
+    var self = this;
+    global.addEventListener('resize', this._resize, { passive: true });
+    global.addEventListener('orientationchange', function () {
+      // iOS reports stale dimensions during the rotation animation.
+      setTimeout(self._resize, 80);
+      setTimeout(self._resize, 350);
+    }, { passive: true });
+    if (global.visualViewport) {
+      global.visualViewport.addEventListener('resize', this._resize, { passive: true });
+    }
+    // The window can stay the same size while our container changes (rotation
+    // on some Androids, desktop devtools, dynamic toolbars).
+    if (global.ResizeObserver) {
+      this._ro = new ResizeObserver(this._resize);
+      try { this._ro.observe(canvas); } catch (e) {}
+    }
+    this.resize();
+  }
+  Surface.prototype.resize = function () {
+    var rect = this.canvas.getBoundingClientRect();
+    var cssW = Math.max(1, Math.round(rect.width));
+    var cssH = Math.max(1, Math.round(rect.height));
+    var dpr = Math.min(MAX_DPR, global.devicePixelRatio || 1) * this.quality;
+    if (cssW === this.w && cssH === this.h && dpr === this.dpr) return;
+    this.w = cssW; this.h = cssH; this.dpr = dpr;
+    this.canvas.width = Math.round(cssW * dpr);
+    this.canvas.height = Math.round(cssH * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.ctx.imageSmoothingEnabled = true;
+    if (this.onResize) this.onResize(cssW, cssH, dpr);
+  };
+
+  /** Drop the render scale when the GPU can't keep up. This game is entirely
+   *  fill-rate bound (glow sprites composited with 'lighter'), so resolution is
+   *  the only lever that matters, and it is invisible on a glow-heavy scene. */
+  Surface.prototype.setQuality = function (q) {
+    q = Math.max(0.5, Math.min(1, q));
+    if (Math.abs(q - this.quality) < 0.01) return false;
+    this.quality = q;
+    this.dpr = -1;               // force resize() past its no-op guard
+    this.resize();
+    return true;
+  };
+
+  /* ---- Reduced motion -------------------------------------------------------- */
+  var rmQuery = global.matchMedia ? global.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  function prefersReducedMotion() {
+    if (Store.get('motion', null) !== null) return !Store.get('motion', true);
+    return !!(rmQuery && rmQuery.matches);
+  }
+
+  /* ---- Lifecycle -------------------------------------------------------------
+   * 'pagehide' + 'visibilitychange' is the pair that actually fires reliably on
+   * iOS Safari; 'blur' alone misses the app-switcher and 'unload' never fires. */
+  function onHidden(fn) {
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') fn();
+    });
+    global.addEventListener('pagehide', fn);
+    global.addEventListener('blur', fn);
+  }
+  function onVisible(fn) {
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') fn();
+    });
+    global.addEventListener('pageshow', fn);
+  }
+
+  var isTouch = ('ontouchstart' in global) || (navigator.maxTouchPoints > 0);
+  var isIOS = /iP(hone|ad|od)/.test(navigator.platform || '') ||
+              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
+              /iPhone|iPad|iPod/.test(navigator.userAgent);
+  var isStandalone = !!(global.matchMedia && global.matchMedia('(display-mode: standalone)').matches) ||
+                     navigator.standalone === true;
+
+  global.Platform = {
+    Surface: Surface,
+    Store: Store,
+    vibrate: vibrate,
+    hasHaptics: hapticsOK,
+    prefersReducedMotion: prefersReducedMotion,
+    onHidden: onHidden,
+    onVisible: onVisible,
+    isTouch: isTouch,
+    isIOS: isIOS,
+    isStandalone: isStandalone,
+    MAX_DPR: MAX_DPR
+  };
+})(typeof self !== 'undefined' ? self : this);
+
+/* ===== js/input.js ===== */
+/* input.js \u2014 one-thumb control.
+ *
+ * Scheme: a *dynamic, sticky* virtual joystick. The stick is born wherever the
+ * thumb lands (no fixed on-screen pad to reach for), and if the thumb travels
+ * past MAX_R the origin is dragged along behind it, so long swipes never "run
+ * out of stick". Desktop gets WASD/arrows and click-drag, which produce the
+ * identical normalised vector the game reads.
+ */
+(function (global) {
+  'use strict';
+
+  var DEAD_R = 6;    // css px of slop before we register intent \u2014 kills jitter
+  var MAX_R  = 46;   // css px for full deflection; ~9mm, comfortable thumb throw
+  var TAP_MS = 220;  // press shorter than this...
+  var TAP_R  = 12;   // ...and tighter than this counts as a tap, not a drag
+
+  function Input(el) {
+    this.el = el;
+    this.active = false;      // is a pointer/key currently steering
+    this.touching = false;    // is a *pointer* down (drives the on-screen stick art)
+    this.x = 0; this.y = 0;   // normalised direction, magnitude 0..1
+    this.mag = 0;
+    this.originX = 0; this.originY = 0;   // stick base, css px, for rendering
+    this.knobX = 0; this.knobY = 0;       // stick knob, css px, for rendering
+    this.onTap = null;
+    this.enabled = true;
+
+    this._id = null;
+    this._startT = 0;
+    this._startX = 0; this._startY = 0;
+    this._moved = 0;
+    this._keys = Object.create(null);
+
+    this._bind();
+  }
+
+  Input.prototype._bind = function () {
+    var self = this, el = this.el;
+    var opts = { passive: false };
+
+    function local(e) {
+      var r = el.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+
+    function down(e) {
+      if (!self.enabled) return;
+      if (self._id !== null) return;              // first finger wins; ignore the rest
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      self._id = e.pointerId;
+      var p = local(e);
+      self.originX = self._startX = p.x;
+      self.originY = self._startY = p.y;
+      self.knobX = p.x; self.knobY = p.y;
+      self.touching = true;
+      self._startT = performance.now();
+      self._moved = 0;
+      self.x = self.y = self.mag = 0;
+      if (el.setPointerCapture) { try { el.setPointerCapture(e.pointerId); } catch (err) {} }
+      e.preventDefault();
+    }
+
+    function move(e) {
+      if (self._id !== e.pointerId) return;
+      var p = local(e);
+      var dx = p.x - self.originX, dy = p.y - self.originY;
+      var d = Math.hypot(dx, dy);
+      self._moved = Math.max(self._moved, Math.hypot(p.x - self._startX, p.y - self._startY));
+
+      if (d > MAX_R) {
+        // Sticky origin: drag the base along so the stick stays at full tilt.
+        var k = (d - MAX_R) / d;
+        self.originX += dx * k;
+        self.originY += dy * k;
+        dx = p.x - self.originX; dy = p.y - self.originY;
+        d = MAX_R;
+      }
+      self.knobX = p.x; self.knobY = p.y;
+
+      if (d <= DEAD_R) {
+        self.x = self.y = self.mag = 0;
+        self.active = false;
+      } else {
+        var m = (d - DEAD_R) / (MAX_R - DEAD_R);   // rescale so output starts at 0 past the dead zone
+        if (m > 1) m = 1;
+        self.x = dx / d; self.y = dy / d;
+        self.mag = m;
+        self.active = true;
+      }
+      e.preventDefault();
+    }
+
+    function up(e) {
+      if (self._id !== e.pointerId) return;
+      var dt = performance.now() - self._startT;
+      self._id = null;
+      self.touching = false;
+      self.active = false;
+      self.x = self.y = self.mag = 0;
+      if (dt <= TAP_MS && self._moved <= TAP_R && self.onTap) self.onTap(self._startX, self._startY);
+      if (e.cancelable) e.preventDefault();
+    }
+
+    el.addEventListener('pointerdown', down, opts);
+    el.addEventListener('pointermove', move, opts);
+    el.addEventListener('pointerup', up, opts);
+    el.addEventListener('pointercancel', up, opts);
+    el.addEventListener('lostpointercapture', function (e) {
+      if (self._id === e.pointerId) { self._id = null; self.touching = false; self.active = false; self.mag = 0; }
+    });
+    // Belt and braces against iOS gestures that pointer events don't cover.
+    el.addEventListener('touchstart', function (e) { if (e.cancelable) e.preventDefault(); }, opts);
+    el.addEventListener('touchmove', function (e) { if (e.cancelable) e.preventDefault(); }, opts);
+    el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    el.addEventListener('dblclick', function (e) { e.preventDefault(); });
+
+    global.addEventListener('keydown', function (e) {
+      if (e.repeat) return;
+      self._keys[e.key.toLowerCase()] = true;
+      self._syncKeys();
+    });
+    global.addEventListener('keyup', function (e) {
+      self._keys[e.key.toLowerCase()] = false;
+      self._syncKeys();
+    });
+    global.addEventListener('blur', function () {
+      self._keys = Object.create(null);
+      self._id = null; self.touching = false; self.active = false; self.mag = 0; self.x = self.y = 0;
+    });
+  };
+
+  Input.prototype._syncKeys = function () {
+    if (this._id !== null) return;              // a live pointer outranks the keyboard
+    var k = this._keys;
+    var dx = (k.d || k.arrowright ? 1 : 0) - (k.a || k.arrowleft ? 1 : 0);
+    var dy = (k.s || k.arrowdown ? 1 : 0) - (k.w || k.arrowup ? 1 : 0);
+    if (dx === 0 && dy === 0) {
+      this.x = this.y = this.mag = 0; this.active = false;
+      return;
+    }
+    var d = Math.hypot(dx, dy);
+    this.x = dx / d; this.y = dy / d; this.mag = 1; this.active = true;
+  };
+
+  Input.prototype.reset = function () {
+    this._id = null; this._keys = Object.create(null);
+    this.touching = this.active = false;
+    this.x = this.y = this.mag = 0;
+  };
+
+  Input.DEAD_R = DEAD_R;
+  Input.MAX_R = MAX_R;
+  global.Input = Input;
+})(typeof self !== 'undefined' ? self : this);
+
+/* ===== js/audio.js ===== */
+/* audio.js \u2014 every sound in this game is synthesised at runtime.
+ * No audio files means no loading screen, no CORS, and the whole game still
+ * works opened straight off the filesystem.
+ */
+(function (global) {
+  'use strict';
+
+  var ctx = null, master = null, musicBus = null, sfxBus = null;
+  var unlocked = false, enabled = true;
+  var noiseBuf = null;
+  var music = { on: false, next: 0, step: 0, intensity: 0, timer: null };
+
+  function now() { return ctx ? ctx.currentTime : 0; }
+
+  function init() {
+    if (ctx) return ctx;
+    var AC = global.AudioContext || global.webkitAudioContext;
+    if (!AC) return null;
+    try { ctx = new AC(); } catch (e) { return null; }
+
+    master = ctx.createGain();
+    master.gain.value = 0.85;
+    master.connect(ctx.destination);
+
+    sfxBus = ctx.createGain(); sfxBus.gain.value = 1.0; sfxBus.connect(master);
+    musicBus = ctx.createGain(); musicBus.gain.value = 0.0; musicBus.connect(master);
+
+    // One second of white noise, reused for every percussive/breath sound.
+    noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    var d = noiseBuf.getChannelData(0);
+    var s = 123456789;
+    for (var i = 0; i < d.length; i++) {           // xorshift so the buffer is identical every load
+      s ^= s << 13; s ^= s >>> 17; s ^= s << 5; s |= 0;
+      d[i] = (s / 2147483648) % 1;
+    }
+    return ctx;
+  }
+
+  /* Browsers only let audio start inside a user gesture. Call from the first tap. */
+  function unlock() {
+    if (!init()) return;
+    if (ctx.state === 'suspended') ctx.resume();
+    if (unlocked) return;
+    unlocked = true;
+    var o = ctx.createOscillator(), g = ctx.createGain();
+    g.gain.value = 0.0001;
+    o.connect(g); g.connect(master);
+    o.start(); o.stop(now() + 0.02);
+  }
+
+  /* ---- primitives ----------------------------------------------------------- */
+
+  /** A pitched blip: waveform, freq glide f0->f1, gain envelope. */
+  function tone(o) {
+    if (!ctx || !enabled) return;
+    var t = now() + (o.delay || 0);
+    var osc = ctx.createOscillator();
+    var g = ctx.createGain();
+    osc.type = o.type || 'square';
+    osc.frequency.setValueAtTime(o.f0, t);
+    if (o.f1 && o.f1 !== o.f0) {
+      if (o.glide === 'lin') osc.frequency.linearRampToValueAtTime(o.f1, t + o.dur);
+      else osc.frequency.exponentialRampToValueAtTime(Math.max(1, o.f1), t + o.dur);
+    }
+    var peak = (o.gain === undefined ? 0.22 : o.gain);
+    var atk = o.attack === undefined ? 0.006 : o.attack;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + atk);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);
+
+    var node = osc;
+    if (o.filter) {
+      var f = ctx.createBiquadFilter();
+      f.type = o.filter;
+      f.frequency.setValueAtTime(o.fc0 || 900, t);
+      if (o.fc1) f.frequency.exponentialRampToValueAtTime(Math.max(40, o.fc1), t + o.dur);
+      f.Q.value = o.q || 1;
+      node.connect(f); f.connect(g);
+    } else {
+      node.connect(g);
+    }
+    g.connect(o.bus || sfxBus);
+    osc.start(t); osc.stop(t + o.dur + 0.02);
+  }
+
+  /** A noise burst through a filter \u2014 impacts, breath, static. */
+  function noise(o) {
+    if (!ctx || !enabled || !noiseBuf) return;
+    var t = now() + (o.delay || 0);
+    var src = ctx.createBufferSource();
+    src.buffer = noiseBuf;
+    src.loop = true;
+    var f = ctx.createBiquadFilter();
+    f.type = o.filter || 'bandpass';
+    f.frequency.setValueAtTime(o.fc0 || 1200, t);
+    if (o.fc1) f.frequency.exponentialRampToValueAtTime(Math.max(40, o.fc1), t + o.dur);
+    f.Q.value = o.q === undefined ? 1.2 : o.q;
+    var g = ctx.createGain();
+    var peak = o.gain === undefined ? 0.18 : o.gain;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), t + (o.attack || 0.004));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);
+    src.connect(f); f.connect(g); g.connect(o.bus || sfxBus);
+    src.start(t); src.stop(t + o.dur + 0.02);
+  }
+
+  /* ---- the sound palette ----------------------------------------------------- */
+  var SFX = {
+    /* Eating an ember: a short rising two-step chime. Deliberately *rewarding*,
+       because the whole game hinges on the player believing spikes are good. */
+    pickup: function (pitch) {
+      var p = 1 + (pitch || 0) * 0.06;
+      tone({ type: 'square', f0: 520 * p, f1: 900 * p, dur: 0.085, gain: 0.17, attack: 0.004 });
+      tone({ type: 'triangle', f0: 1040 * p, f1: 1560 * p, dur: 0.12, gain: 0.1, delay: 0.045 });
+    },
+    /* You tore flame out of a brighter soul. Meaty. */
+    steal: function () {
+      noise({ filter: 'lowpass', fc0: 2400, fc1: 220, dur: 0.22, gain: 0.3, q: 0.8 });
+      tone({ type: 'sawtooth', f0: 180, f1: 60, dur: 0.26, gain: 0.22, filter: 'lowpass', fc0: 1400, fc1: 300 });
+      tone({ type: 'square', f0: 880, f1: 1320, dur: 0.1, gain: 0.09, delay: 0.03 });
+    },
+    /* A dimmer soul tore flame out of YOU. Same impact, inverted pitch move. */
+    drained: function () {
+      noise({ filter: 'bandpass', fc0: 900, fc1: 160, dur: 0.3, gain: 0.34, q: 0.6 });
+      tone({ type: 'sawtooth', f0: 300, f1: 42, dur: 0.36, gain: 0.26, filter: 'lowpass', fc0: 1800, fc1: 180 });
+    },
+    /* Somebody else went out. A distant, hollow bell. */
+    soulOut: function (n) {
+      var f = 300 - (n || 0) * 10;
+      tone({ type: 'sine', f0: f, f1: f * 0.5, dur: 0.5, gain: 0.11 });
+      noise({ filter: 'highpass', fc0: 3200, fc1: 900, dur: 0.3, gain: 0.05 });
+    },
+    /* You went out. The long fall. */
+    death: function () {
+      tone({ type: 'sine', f0: 420, f1: 40, dur: 1.5, gain: 0.3, filter: 'lowpass', fc0: 2200, fc1: 120 });
+      tone({ type: 'sawtooth', f0: 210, f1: 26, dur: 1.7, gain: 0.14, filter: 'lowpass', fc0: 1400, fc1: 90 });
+      noise({ filter: 'lowpass', fc0: 1800, fc1: 90, dur: 1.4, gain: 0.16 });
+    },
+    /* The light is about to close in. */
+    ringWarn: function () {
+      tone({ type: 'triangle', f0: 660, f1: 660, dur: 0.09, gain: 0.13 });
+      tone({ type: 'triangle', f0: 880, f1: 880, dur: 0.11, gain: 0.11, delay: 0.13 });
+    },
+    ringMove: function () {
+      noise({ filter: 'bandpass', fc0: 260, fc1: 90, dur: 1.1, gain: 0.1, q: 0.5, attack: 0.3 });
+    },
+    /* Burning in the void. Loops as a one-shot re-triggered by the game. */
+    voidBurn: function () {
+      noise({ filter: 'highpass', fc0: 1800, fc1: 4200, dur: 0.4, gain: 0.055, q: 0.4, attack: 0.15 });
+    },
+    count: function (n) {
+      tone({ type: 'square', f0: 300 + n * 90, f1: 300 + n * 90, dur: 0.11, gain: 0.16 });
+    },
+    /* The reveal. Rising minor-to-major arpeggio: the twist, in music. */
+    win: function () {
+      var seq = [261.63, 311.13, 392.00, 523.25, 622.25, 783.99];
+      for (var i = 0; i < seq.length; i++) {
+        tone({ type: 'square', f0: seq[i], f1: seq[i], dur: 0.34, gain: 0.13, delay: i * 0.11 });
+        tone({ type: 'triangle', f0: seq[i] * 2, f1: seq[i] * 2, dur: 0.2, gain: 0.06, delay: i * 0.11 + 0.02 });
+      }
+      tone({ type: 'sine', f0: 65.4, f1: 65.4, dur: 1.9, gain: 0.2, delay: 0.05 });
+    },
+    lose: function () {
+      tone({ type: 'square', f0: 330, f1: 330, dur: 0.2, gain: 0.11 });
+      tone({ type: 'square', f0: 247, f1: 247, dur: 0.34, gain: 0.11, delay: 0.16 });
+      tone({ type: 'sine', f0: 82, f1: 62, dur: 1.1, gain: 0.16, delay: 0.16 });
+    },
+    ui: function () { tone({ type: 'square', f0: 700, f1: 940, dur: 0.05, gain: 0.08 }); },
+    danger: function () { tone({ type: 'sawtooth', f0: 140, f1: 90, dur: 0.3, gain: 0.1, filter: 'lowpass', fc0: 600 }); }
+  };
+
+  function play(name, arg) {
+    if (!ctx || !enabled) return;
+    if (ctx.state === 'suspended') ctx.resume();
+    var fn = SFX[name];
+    if (fn) { try { fn(arg); } catch (e) {} }
+  }
+
+  /* ---- music -----------------------------------------------------------------
+   * A four-on-the-floor heartbeat with a bassline that climbs as the arena
+   * empties. Scheduled ahead in small chunks so tab throttling can't shred it. */
+  var ROOT = [55.00, 58.27, 49.00, 43.65];        // A1, Bb1, G1, F1 \u2014 a slow descending dread loop
+  var LOOKAHEAD = 0.12, SCHEDULE_MS = 45;
+
+  function scheduler() {
+    if (!music.on || !ctx) return;
+    var t = now();
+    var beat = 60 / (78 + music.intensity * 34);  // 78bpm calm -> 112bpm frantic
+    while (music.next < t + LOOKAHEAD) {
+      var s = music.step, bar = Math.floor(s / 4) % 4, at = music.next;
+      var root = ROOT[bar];
+
+      // Kick: the heartbeat. Always there.
+      tone({ type: 'sine', f0: 120, f1: 42, dur: 0.2, gain: 0.5, bus: musicBus, delay: at - t });
+      // Bass note on every beat, octave-jumping when the arena gets tense.
+      var bf = root * (s % 4 === 2 && music.intensity > 0.45 ? 2 : 1);
+      tone({ type: 'sawtooth', f0: bf, f1: bf, dur: beat * 0.82, gain: 0.16,
+             filter: 'lowpass', fc0: 300 + music.intensity * 1500, q: 6, bus: musicBus, delay: at - t });
+      // Hat on the off-beat once things heat up.
+      if (music.intensity > 0.25 && s % 2 === 1) {
+        noise({ filter: 'highpass', fc0: 7000, dur: 0.05, gain: 0.05 * music.intensity, bus: musicBus, delay: at - t });
+      }
+      // A fifth stab every other bar at high intensity \u2014 the "someone is hunting you" motif.
+      if (music.intensity > 0.6 && s % 8 === 6) {
+        tone({ type: 'square', f0: root * 6, f1: root * 4, dur: 0.18, gain: 0.05, bus: musicBus, delay: at - t });
+      }
+      music.next += beat;
+      music.step = (s + 1) % 16;
+    }
+    music.timer = setTimeout(scheduler, SCHEDULE_MS);
+  }
+
+  function startMusic() {
+    if (!ctx || !enabled || music.on) return;
+    music.on = true; music.step = 0; music.next = now() + 0.08;
+    musicBus.gain.cancelScheduledValues(now());
+    musicBus.gain.setValueAtTime(0.0001, now());
+    musicBus.gain.linearRampToValueAtTime(0.5, now() + 1.2);
+    scheduler();
+  }
+  function stopMusic(fade) {
+    if (!ctx || !music.on) return;
+    music.on = false;
+    if (music.timer) { clearTimeout(music.timer); music.timer = null; }
+    musicBus.gain.cancelScheduledValues(now());
+    musicBus.gain.setValueAtTime(musicBus.gain.value, now());
+    musicBus.gain.linearRampToValueAtTime(0.0001, now() + (fade === undefined ? 0.5 : fade));
+  }
+  function setIntensity(v) { music.intensity = Math.max(0, Math.min(1, v)); }
+
+  function setEnabled(v) {
+    enabled = !!v;
+    if (master) master.gain.value = enabled ? 0.85 : 0;
+    if (!enabled) stopMusic(0.1);
+  }
+  function suspend() { if (ctx && ctx.state === 'running') { stopMusic(0.1); ctx.suspend(); } }
+  function resume() { if (ctx && ctx.state === 'suspended' && enabled) ctx.resume(); }
+
+  global.Audio2 = {
+    init: init, unlock: unlock, play: play,
+    startMusic: startMusic, stopMusic: stopMusic, setIntensity: setIntensity,
+    setEnabled: setEnabled, isEnabled: function () { return enabled; },
+    suspend: suspend, resume: resume
+  };
+})(typeof self !== 'undefined' ? self : this);
+
+/* ===== js/juice.js ===== */
+/* juice.js \u2014 the layer that makes hits feel like hits.
+ * Trauma-based screenshake, hitstop, a pooled particle system, floating text,
+ * and pre-rendered glow sprites (shadowBlur is far too expensive per-frame on
+ * a phone, so every glow in this game is a cached radial-gradient bitmap).
+ */
+(function (global) {
+  'use strict';
+
+  /* ---- easing ---------------------------------------------------------------- */
+  var Ease = {
+    linear:    function (t) { return t; },
+    outCubic:  function (t) { return 1 - Math.pow(1 - t, 3); },
+    inCubic:   function (t) { return t * t * t; },
+    outQuint:  function (t) { return 1 - Math.pow(1 - t, 5); },
+    inOutCubic:function (t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; },
+    outBack:   function (t) { var c = 1.70158, c3 = c + 1; return 1 + c3 * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); },
+    outElastic:function (t) {
+      var c4 = (2 * Math.PI) / 3;
+      return t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+    },
+    outBounce: function (t) {
+      var n1 = 7.5625, d1 = 2.75;
+      if (t < 1 / d1) return n1 * t * t;
+      if (t < 2 / d1) return n1 * (t -= 1.5 / d1) * t + 0.75;
+      if (t < 2.5 / d1) return n1 * (t -= 2.25 / d1) * t + 0.9375;
+      return n1 * (t -= 2.625 / d1) * t + 0.984375;
+    }
+  };
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  /* ---- glow sprite cache -----------------------------------------------------
+   * Key: colour + radius bucket. Buckets keep the cache small (a few dozen
+   * bitmaps) while still looking smooth, because we scale on draw. */
+  /* One 128px sprite per colour, scaled at draw time. Fixed size beats radius
+   * bucketing: no cache blowup, no visible size-quantisation, and a soft radial
+   * falloff survives any amount of scaling. */
+  var GLOW_PX = 128;
+  var glowCache = Object.create(null);
+  function glowSprite(color) {
+    var c = glowCache[color];
+    if (c) return c;
+    c = document.createElement('canvas');
+    c.width = c.height = GLOW_PX;
+    var g = c.getContext('2d');
+    var h = GLOW_PX / 2;
+    var grad = g.createRadialGradient(h, h, 0, h, h, h);
+    grad.addColorStop(0.00, hexA(color, 1.0));
+    grad.addColorStop(0.16, hexA(color, 0.70));
+    grad.addColorStop(0.42, hexA(color, 0.24));
+    grad.addColorStop(0.72, hexA(color, 0.055));
+    grad.addColorStop(1.00, hexA(color, 0));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, GLOW_PX, GLOW_PX);
+    glowCache[color] = c;
+    return c;
+  }
+  /** Draw a cached glow centred at x,y, scaled to `radius` (in the ctx's units). */
+  function drawGlow(ctx, x, y, radius, color, alpha) {
+    var s = glowSprite(color);
+    ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+    ctx.drawImage(s, x - radius, y - radius, radius * 2, radius * 2);
+    ctx.globalAlpha = 1;
+  }
+
+  var rgbCache = Object.create(null);
+  function hexA(hex, a) {
+    var rgb = rgbCache[hex];
+    if (!rgb) {
+      var h = hex.replace('#', '');
+      if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      rgb = rgbCache[hex] = [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    }
+    return 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + a + ')';
+  }
+  function toRgb(hex) {
+    hexA(hex, 1);
+    return rgbCache[hex];
+  }
+  /** Sample a colour ramp: stops = [[pos, '#hex'], ...] with pos in 0..1. */
+  function ramp(stops, t) {
+    t = clamp(t, 0, 1);
+    for (var i = 1; i < stops.length; i++) {
+      if (t <= stops[i][0]) {
+        var a = stops[i - 1], b = stops[i];
+        var k = (t - a[0]) / Math.max(1e-6, b[0] - a[0]);
+        var ca = toRgb(a[1]), cb = toRgb(b[1]);
+        return 'rgb(' + Math.round(lerp(ca[0], cb[0], k)) + ',' +
+                        Math.round(lerp(ca[1], cb[1], k)) + ',' +
+                        Math.round(lerp(ca[2], cb[2], k)) + ')';
+      }
+    }
+    return stops[stops.length - 1][1];
+  }
+  /** Same ramp but snapped to N buckets so the glow cache stays tiny. */
+  function rampHex(stops, t, buckets) {
+    buckets = buckets || 12;
+    var q = Math.round(clamp(t, 0, 1) * buckets) / buckets;
+    var c = ramp(stops, q);
+    var m = /rgb\((\d+),(\d+),(\d+)\)/.exec(c);
+    if (!m) return c;
+    return '#' + ((1 << 24) + (+m[1] << 16) + (+m[2] << 8) + +m[3]).toString(16).slice(1);
+  }
+
+  /* ---- camera: trauma-squared shake ------------------------------------------
+   * Kelly's model: store trauma 0..1, shake by trauma^2 so small hits barely
+   * register and big ones slam. Decays linearly. */
+  function Camera() {
+    this.trauma = 0;
+    this.x = 0; this.y = 0; this.rot = 0;
+    this.maxOffset = 14;      // css px at full trauma
+    this.maxRot = 0.035;      // radians
+    this.decay = 1.5;         // trauma per second
+    this.enabled = true;
+    this._t = 0;
+  }
+  Camera.prototype.shake = function (amount) {
+    if (!this.enabled) return;
+    this.trauma = clamp(this.trauma + amount, 0, 1);
+  };
+  Camera.prototype.update = function (dt, rng) {
+    this._t += dt;
+    if (this.trauma <= 0) { this.x = this.y = this.rot = 0; return; }
+    var s = this.trauma * this.trauma;
+    // Cheap smooth noise: three out-of-phase sines beat rand() (no jitter tearing).
+    var t = this._t * 46;
+    this.x = s * this.maxOffset * (Math.sin(t) * 0.6 + Math.sin(t * 2.31 + 1.7) * 0.4);
+    this.y = s * this.maxOffset * (Math.sin(t * 1.13 + 4.2) * 0.6 + Math.sin(t * 2.7 + 0.3) * 0.4);
+    this.rot = s * this.maxRot * Math.sin(t * 0.87 + 2.1);
+    this.trauma = Math.max(0, this.trauma - this.decay * dt);
+  };
+
+  /* ---- hitstop ----------------------------------------------------------------
+   * Freeze the simulation for a few frames on impact. The single cheapest way to
+   * make a collision feel like it has mass. */
+  function Hitstop() { this.left = 0; }
+  Hitstop.prototype.hit = function (seconds) { this.left = Math.max(this.left, seconds); };
+  /** Returns the dt the simulation should actually advance by. */
+  Hitstop.prototype.consume = function (dt) {
+    if (this.left <= 0) return dt;
+    this.left -= dt;
+    if (this.left > 0) return 0;
+    var rest = -this.left; this.left = 0;
+    return rest;
+  };
+
+  /* ---- particles ------------------------------------------------------------
+   * Flat pooled array, no allocation during play. Dead particles are swapped to
+   * the tail so the live prefix stays contiguous. */
+  function Particles(max) {
+    this.max = max || 480;
+    this.n = 0;
+    this.p = new Array(this.max);
+    for (var i = 0; i < this.max; i++) {
+      this.p[i] = { x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1, r: 1, color: '#fff', drag: 0.9, glow: false, grav: 0, spin: 0, rot: 0, shape: 0 };
+    }
+  }
+  Particles.prototype.spawn = function (o) {
+    var q;
+    if (this.n < this.max) { q = this.p[this.n++]; }
+    else { q = this.p[(Math.abs(o.x | 0) + this.n) % this.max]; }   // recycle oldest-ish under pressure
+    q.x = o.x; q.y = o.y; q.vx = o.vx || 0; q.vy = o.vy || 0;
+    q.life = q.max = o.life || 0.5;
+    q.r = o.r || 2; q.color = o.color || '#fff';
+    q.drag = o.drag === undefined ? 0.90 : o.drag;
+    q.glow = !!o.glow; q.grav = o.grav || 0;
+    q.rot = o.rot || 0; q.spin = o.spin || 0; q.shape = o.shape || 0;
+    return q;
+  };
+  /** Radial burst. rng must be a seeded RNG.Rng so replays stay identical. */
+  Particles.prototype.burst = function (rng, x, y, count, opts) {
+    opts = opts || {};
+    var spd0 = opts.speed || 60, spd1 = opts.speed2 || spd0 * 2.2;
+    for (var i = 0; i < count; i++) {
+      var a = opts.dir === undefined ? rng.angle() : opts.dir + rng.range(-1, 1) * (opts.spread || Math.PI);
+      var s = rng.range(spd0, spd1);
+      this.spawn({
+        x: x, y: y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: rng.range(opts.life || 0.3, opts.life2 || (opts.life || 0.3) * 2),
+        r: rng.range(opts.r || 1.2, opts.r2 || 3),
+        color: opts.colors ? rng.pick(opts.colors) : (opts.color || '#fff'),
+        drag: opts.drag === undefined ? 0.90 : opts.drag,
+        glow: opts.glow !== false, grav: opts.grav || 0,
+        rot: rng.angle(), spin: rng.range(-8, 8), shape: opts.shape || 0
+      });
+    }
+  };
+  Particles.prototype.update = function (dt) {
+    var i = 0;
+    while (i < this.n) {
+      var q = this.p[i];
+      q.life -= dt;
+      if (q.life <= 0) {
+        this.p[i] = this.p[this.n - 1]; this.p[this.n - 1] = q; this.n--;
+        continue;
+      }
+      var d = Math.pow(q.drag, dt * 60);
+      q.vx *= d; q.vy *= d;
+      q.vy += q.grav * dt;
+      q.x += q.vx * dt; q.y += q.vy * dt;
+      q.rot += q.spin * dt;
+      i++;
+    }
+  };
+  /** Particles are simulated in world units but drawn in screen pixels, so the
+   *  glow sprite is never scaled by the world transform. */
+  Particles.prototype.draw = function (ctx, ox, oy, scale) {
+    ox = ox || 0; oy = oy || 0; scale = scale || 1;
+    var prev = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < this.n; i++) {
+      var q = this.p[i];
+      var t = q.life / q.max;
+      var a = t > 0.7 ? 1 : t / 0.7;                 // hold, then fade
+      var r = q.r * (0.35 + 0.65 * t) * scale;
+      var x = ox + q.x * scale, y = oy + q.y * scale;
+      if (q.glow) drawGlow(ctx, x, y, r * 3.2, q.color, a * 0.5);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = q.color;
+      if (q.shape === 1) {                            // shard
+        ctx.save();
+        ctx.translate(x, y); ctx.rotate(q.rot);
+        ctx.fillRect(-r, -r * 0.34, r * 2, r * 0.68);
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 6.283185);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = prev;
+  };
+  Particles.prototype.clear = function () { this.n = 0; };
+
+  /* ---- floating text --------------------------------------------------------- */
+  function FloatText(max) {
+    this.max = max || 24; this.n = 0; this.p = new Array(this.max);
+    for (var i = 0; i < this.max; i++) this.p[i] = { x: 0, y: 0, vy: 0, life: 0, maxL: 1, text: '', color: '#fff', size: 12 };
+  }
+  FloatText.prototype.add = function (x, y, text, color, size) {
+    var q = this.n < this.max ? this.p[this.n++] : this.p[0];
+    q.x = x; q.y = y; q.vy = -34; q.life = q.maxL = 0.9;
+    q.text = text; q.color = color || '#fff'; q.size = size || 13;
+  };
+  FloatText.prototype.update = function (dt) {
+    var i = 0;
+    while (i < this.n) {
+      var q = this.p[i];
+      q.life -= dt;
+      if (q.life <= 0) { this.p[i] = this.p[this.n - 1]; this.p[this.n - 1] = q; this.n--; continue; }
+      q.y += q.vy * dt; q.vy *= Math.pow(0.93, dt * 60);
+      i++;
+    }
+  };
+  FloatText.prototype.draw = function (ctx) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (var i = 0; i < this.n; i++) {
+      var q = this.p[i];
+      var t = q.life / q.maxL;
+      var pop = 1 + 0.35 * Ease.outBack(clamp((1 - t) * 4, 0, 1)) - 0.35;
+      ctx.globalAlpha = t > 0.55 ? 1 : t / 0.55;
+      ctx.font = '800 ' + (q.size * pop).toFixed(1) + 'px ui-monospace, Menlo, monospace';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.75)';
+      ctx.strokeText(q.text, q.x, q.y);
+      ctx.fillStyle = q.color;
+      ctx.fillText(q.text, q.x, q.y);
+    }
+    ctx.globalAlpha = 1;
+  };
+  FloatText.prototype.clear = function () { this.n = 0; };
+
+  global.Juice = {
+    Ease: Ease, Camera: Camera, Hitstop: Hitstop,
+    Particles: Particles, FloatText: FloatText,
+    drawGlow: drawGlow, glowSprite: glowSprite,
+    hexA: hexA, ramp: ramp, rampHex: rampHex, toRgb: toRgb,
+    clamp: clamp, lerp: lerp
+  };
+})(typeof self !== 'undefined' ? self : this);
+
+/* ===== js/render.js ===== */
+/* render.js \u2014 everything you see inside the arena.
+ * Canvas2D only, no shadowBlur in the hot loop; all bloom comes from cached
+ * radial-gradient sprites composited with 'lighter'.
+ */
+(function (global) {
+  'use strict';
+
+  var J = global.Juice, clamp = J.clamp, lerp = J.lerp;
+  var TAU = Math.PI * 2;
+
+  function Renderer(surface) {
+    this.s = surface;
+    this.scale = 1; this.ox = 0; this.oy = 0;
+    this.contrast = false;
+    this.showNames = true;
+    this.reduced = false;
+    this.zoom = 1;
+    this._lastT = 0;
+    this._bg = null; this._bgKey = '';
+  }
+
+  var MAX_ZOOM = 2.15;
+
+  /* Baked gradients. createRadialGradient is cheap; filling a large area with
+   * one, 60 times a second, is not \u2014 especially at devicePixelRatio 2+. */
+  var FIELD_PX = 256;
+  var fieldSprite = null, fieldSpriteHi = null;
+  function makeField(boost) {
+    var c = document.createElement('canvas');
+    c.width = c.height = FIELD_PX;
+    var g = c.getContext('2d');
+    var h = FIELD_PX / 2;
+    var grad = g.createRadialGradient(h, h, 0, h, h, h);
+    grad.addColorStop(0, 'rgba(32,20,62,' + (0.95 + boost) + ')');
+    grad.addColorStop(0.55, 'rgba(22,13,44,0.70)');
+    grad.addColorStop(0.88, 'rgba(14,9,29,0.38)');
+    grad.addColorStop(1, 'rgba(10,7,22,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, FIELD_PX, FIELD_PX);
+    return c;
+  }
+  function fieldFor(finale) {
+    if (finale) { if (!fieldSpriteHi) fieldSpriteHi = makeField(0.4); return fieldSpriteHi; }
+    if (!fieldSprite) fieldSprite = makeField(0);
+    return fieldSprite;
+  }
+
+  var vigCache = { key: '', normal: null, danger: null };
+  function vignetteFor(cw, ch, danger) {
+    var key = cw + 'x' + ch;
+    if (vigCache.key !== key) {
+      vigCache.key = key; vigCache.normal = null; vigCache.danger = null;
+    }
+    var slot = danger ? 'danger' : 'normal';
+    if (!vigCache[slot]) {
+      var c = document.createElement('canvas');
+      c.width = cw; c.height = ch;
+      var g = c.getContext('2d');
+      var grad = g.createRadialGradient(cw / 2, ch / 2, Math.min(cw, ch) * 0.32,
+                                        cw / 2, ch / 2, Math.max(cw, ch) * 0.72);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, danger ? 'rgba(120,6,30,.62)' : 'rgba(0,0,0,.55)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, cw, ch);
+      vigCache[slot] = c;
+    }
+    return vigCache[slot];
+  }
+
+  Renderer.prototype.layout = function (worldH, ringR, ringRY, dt) {
+    var cw = this.s.w, ch = this.s.h;
+    var base = Math.min(cw / 100, ch / worldH);
+
+    // Close in as the light closes, so the endgame is a knife fight filling the
+    // screen instead of a coin-sized arena in a field of black.
+    if (ringR) {
+      var fit = Math.min(cw * 0.94 / (2 * ringR), ch * 0.80 / (2 * ringRY));
+      var target = clamp(fit / base, 1, MAX_ZOOM);
+      var k = dt ? 1 - Math.exp(-2.0 * dt) : 1;
+      this.zoom += (target - this.zoom) * k;
+    } else {
+      this.zoom = 1;
+    }
+
+    this.scale = base * this.zoom;
+    // Zoom about the arena centre, not the screen box.
+    this.ox = cw / 2 - 50 * this.scale;
+    this.oy = ch / 2 - (worldH / 2) * this.scale;
+    this.worldH = worldH;
+  };
+  Renderer.prototype.toScreenX = function (x) { return this.ox + x * this.scale; };
+  Renderer.prototype.toScreenY = function (y) { return this.oy + y * this.scale; };
+
+  /* Starfield/dust backdrop, rendered once to an offscreen canvas. */
+  Renderer.prototype._backdrop = function (seed) {
+    var key = this.s.w + 'x' + this.s.h + ':' + seed;
+    if (this._bgKey === key && this._bg) return this._bg;
+    var c = document.createElement('canvas');
+    c.width = this.s.w; c.height = this.s.h;
+    var g = c.getContext('2d');
+    g.fillStyle = '#07060d';
+    g.fillRect(0, 0, c.width, c.height);
+    var rng = new global.RNG.Rng('bg:' + seed);
+    for (var i = 0; i < 130; i++) {
+      var x = rng.float() * c.width, y = rng.float() * c.height;
+      var r = rng.range(0.4, 1.5);
+      var a = rng.range(0.05, 0.3);
+      g.fillStyle = 'rgba(154,144,184,' + a.toFixed(3) + ')';
+      g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+    }
+    this._bg = c; this._bgKey = key;
+    return c;
+  };
+
+  Renderer.prototype.draw = function (game, input, tSec) {
+    var ctx = this.s.ctx, cw = this.s.w, ch = this.s.h;
+    var dt = this._lastT ? clamp(tSec - this._lastT, 0, 0.1) : 0;
+    this._lastT = tSec;
+    this.layout(game.worldH, game.ringR, game.ringRY(), dt);
+    var S = this.scale;
+    var cxw = 50, cyw = game.worldH / 2;
+    var cx = this.toScreenX(cxw), cy = this.toScreenY(cyw);
+    var ringPx = game.ringR * S;                 // horizontal semi-axis, screen px
+    var ringPy = game.ringRY() * S;              // vertical \u2014 the light is an ellipse
+
+    ctx.setTransform(this.s.dpr, 0, 0, this.s.dpr, 0, 0);
+    ctx.drawImage(this._backdrop(game.seedStr), 0, 0);
+
+    ctx.save();
+    // Screenshake, applied about the arena centre so rotation doesn't slide.
+    if (game.cam.trauma > 0) {
+      ctx.translate(cx + game.cam.x, cy + game.cam.y);
+      ctx.rotate(game.cam.rot);
+      ctx.translate(-cx, -cy);
+    }
+
+    this._drawField(ctx, game, cx, cy, ringPx, ringPy, tSec);
+    this._drawEmbers(ctx, game, S, tSec);
+    game.fx.draw(ctx, this.ox, this.oy, S);
+    this._drawSouls(ctx, game, S, tSec);
+    this._drawFloatText(ctx, game);
+    ctx.restore();
+
+    this._drawRingEdge(ctx, game, cx, cy, ringPx, ringPy, tSec);
+    if (input && input.touching) this._drawStick(ctx, input);
+    this._drawVignette(ctx, cw, ch, game);
+  };
+
+  /* The light is drawn in a squashed coordinate space, so one circular gradient
+   * becomes the ellipse \u2014 rounder and cheaper than faking an elliptical one. */
+  Renderer.prototype._drawField = function (ctx, game, cx, cy, rx, ry, t) {
+    var k = ry / Math.max(0.001, rx);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, k);
+
+    var fs = fieldFor(game.state === 'finale');
+    var fr = rx * 1.02;
+    ctx.globalAlpha = this.contrast ? 1 : 0.92;
+    ctx.drawImage(fs, -fr, -fr, fr * 2, fr * 2);
+    ctx.globalAlpha = 1;
+
+    // Reference rings + spokes: cheap, and they make the shrink legible.
+    ctx.beginPath(); ctx.arc(0, 0, rx, 0, TAU); ctx.clip();
+    ctx.strokeStyle = this.contrast ? 'rgba(154,144,184,.26)' : 'rgba(123,47,247,.13)';
+    ctx.lineWidth = 1 / Math.max(0.3, k);
+    var step = Math.max(16, rx / 4);
+    for (var r = step * 0.5; r < rx * 1.15; r += step) {
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+    }
+    for (var a = 0; a < 8; a++) {
+      var ang = a / 8 * TAU + t * 0.02;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(ang) * rx * 1.15, Math.sin(ang) * rx * 1.15);
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+
+  Renderer.prototype._drawRingEdge = function (ctx, game, cx, cy, rx, ry, t) {
+    var closing = game.ringStage === 1;
+    var col = closing ? '#ff2d55' : '#7b2ff7';
+    var pulse = 0.5 + 0.5 * Math.sin(t * (closing ? 9 : 2.4));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = J.hexA(col, 0.35 + pulse * 0.45);
+    ctx.lineWidth = closing ? 2.5 : 1.6;
+    ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = J.hexA(col, 0.1 + pulse * 0.12);
+    ctx.lineWidth = closing ? 11 : 7;
+    ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, TAU); ctx.stroke();
+    ctx.restore();
+  };
+
+  Renderer.prototype._drawEmbers = function (ctx, game, S, t) {
+    ctx.save();
+    ctx.translate(this.ox, this.oy);
+    ctx.scale(S, S);
+    for (var i = 0; i < game.embers.length; i++) {
+      var e = game.embers[i];
+      var pop = J.Ease.outBack(e.pop);
+      var r = 2.2 * pop;
+      var breathe = 1 + Math.sin(t * 3.4 + e.spin * 6) * 0.11;
+      var arming = e.arm > 0;
+      var charge = arming ? 1 - e.arm / 1.3 : 1;
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      J.drawGlow(ctx, e.x, e.y, r * (arming ? 2.4 : 4.4) * breathe, '#ff2d55',
+        arming ? 0.16 + charge * 0.3 : 0.62 + e.lit * 0.5);
+      ctx.restore();
+
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      ctx.rotate(e.spin);
+      // An eight-point star: it reads as "spike", i.e. as "danger", which is the
+      // whole joke \u2014 it is the only thing keeping you alive.
+      var scale = arming ? 0.55 + charge * 0.45 : 1 + e.lit * 0.35;
+      ctx.beginPath();
+      for (var p = 0; p < 16; p++) {
+        var ang = (p / 16) * TAU;
+        var rad = (p % 2 === 0 ? r * 1.5 * breathe : r * 0.62) * scale;
+        var px = Math.cos(ang) * rad, py = Math.sin(ang) * rad;
+        if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      if (arming) {
+        // Inert: an outline, so it is unmistakably "not yet".
+        ctx.strokeStyle = 'rgba(255,45,85,' + (0.35 + charge * 0.45).toFixed(2) + ')';
+        ctx.lineWidth = 0.45;
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = '#ff2d55';
+        ctx.fill();
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.46, 0, TAU);
+        ctx.fillStyle = '#ffd0dc'; ctx.fill();
+      }
+      ctx.restore();
+
+      if (arming) {
+        // A fuse everyone in the arena can read: this is worth racing for.
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, r * 2.5, -Math.PI / 2, -Math.PI / 2 + charge * TAU);
+        ctx.strokeStyle = 'rgba(255,208,220,.55)';
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  };
+
+  Renderer.prototype._drawSouls = function (ctx, game, S, t) {
+    ctx.save();
+    ctx.translate(this.ox, this.oy);
+    ctx.scale(S, S);
+
+    // Draw dim souls first so bright ones (the targets) sit on top.
+    var order = game.souls.slice().sort(function (a, b) { return a.flame - b.flame; });
+
+    for (var i = 0; i < order.length; i++) {
+      var s = order[i];
+      if (!s.alive) continue;
+      var r = s.radius();
+      var col = s.color();
+      var f01 = s.flame / 100;
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      // Bloom scales hard with flame: a full soul is a lighthouse announcing
+      // itself to every hungry thing in the arena.
+      J.drawGlow(ctx, s.x, s.y, r * (2.6 + f01 * 3.4), col, 0.42 + f01 * 0.4);
+      ctx.restore();
+
+      // Body
+      ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, TAU);
+      ctx.fillStyle = col; ctx.fill();
+
+      // Hot core
+      ctx.beginPath(); ctx.arc(s.x - r * 0.16, s.y - r * 0.18, r * (0.3 + f01 * 0.26), 0, TAU);
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.4 + f01 * 0.5).toFixed(2) + ')';
+      ctx.fill();
+
+      // Hit flash
+      if (s.flash > 0) {
+        ctx.beginPath(); ctx.arc(s.x, s.y, r * (1 + (1 - s.flash) * 0.9), 0, TAU);
+        ctx.strokeStyle = 'rgba(255,255,255,' + (s.flash * 0.8).toFixed(2) + ')';
+        ctx.lineWidth = 0.7; ctx.stroke();
+      }
+
+      if (s.isPlayer) {
+        // A cyan ring + chevron so "you" is unmistakable without relying on hue.
+        var pr = r + 2.2 + Math.sin(t * 4) * 0.35;
+        ctx.beginPath(); ctx.arc(s.x, s.y, pr, 0, TAU);
+        ctx.strokeStyle = '#00f5d4'; ctx.lineWidth = 0.75; ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(s.x - 2.1, s.y - pr - 2.4);
+        ctx.lineTo(s.x, s.y - pr - 0.5);
+        ctx.lineTo(s.x + 2.1, s.y - pr - 2.4);
+        ctx.closePath();
+        ctx.fillStyle = '#00f5d4'; ctx.fill();
+      } else if (this.showNames && this._hasRoom(game, s)) {
+        ctx.font = '700 2.5px ui-monospace, Menlo, monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillStyle = 'rgba(242,238,252,.32)';
+        ctx.fillText(s.name, s.x, s.y - r - 1.4);
+      }
+    }
+    ctx.restore();
+  };
+
+  /** True when no other living soul is close enough for the labels to collide. */
+  Renderer.prototype._hasRoom = function (game, s) {
+    for (var i = 0; i < game.souls.length; i++) {
+      var o = game.souls[i];
+      if (o === s || !o.alive) continue;
+      if (Math.abs(o.x - s.x) < 13 && Math.abs(o.y - s.y) < 7) return false;
+    }
+    return true;
+  };
+
+  Renderer.prototype._drawFloatText = function (ctx, game) {
+    // Positions are world units, sizes are screen px \u2014 pop-up numbers must stay
+    // the same physical size no matter how the arena is scaled.
+    var p = game.txt;
+    if (!p.n) return;
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (var i = 0; i < p.n; i++) {
+      var q = p.p[i];
+      var tt = q.life / q.maxL;
+      var pop = 0.65 + 0.35 * J.Ease.outBack(clamp((1 - tt) * 4, 0, 1));
+      ctx.globalAlpha = tt > 0.55 ? 1 : tt / 0.55;
+      ctx.font = '800 ' + (q.size * pop).toFixed(1) + 'px ui-monospace, Menlo, monospace';
+      var sx = this.toScreenX(q.x), sy = this.toScreenY(q.y);
+      ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(0,0,0,.8)';
+      ctx.strokeText(q.text, sx, sy);
+      ctx.fillStyle = q.color;
+      ctx.fillText(q.text, sx, sy);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  };
+
+  Renderer.prototype._drawStick = function (ctx, input) {
+    var Ix = global.Input;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(0,245,212,.20)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(input.originX, input.originY, Ix.MAX_R, 0, TAU); ctx.stroke();
+    var kx = input.originX + input.x * input.mag * Ix.MAX_R;
+    var ky = input.originY + input.y * input.mag * Ix.MAX_R;
+    ctx.fillStyle = 'rgba(0,245,212,.30)';
+    ctx.beginPath(); ctx.arc(kx, ky, 15, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(0,245,212,.75)';
+    ctx.beginPath(); ctx.arc(kx, ky, 5.5, 0, TAU); ctx.fill();
+    ctx.restore();
+  };
+
+  Renderer.prototype._drawVignette = function (ctx, cw, ch, game) {
+    // Redden the edges when the player is out in the void \u2014 the only "damage
+    // indicator" the game has.
+    var danger = !!(game._playerOutside && game.player.alive);
+    ctx.drawImage(vignetteFor(cw, ch, danger), 0, 0);
+  };
+
+  global.Renderer = Renderer;
+})(typeof self !== 'undefined' ? self : this);
+
+/* ===== js/game.js ===== */
+/* game.js \u2014 the arena simulation.
+ *
+ * DESIGN NOTE, because every rule below looks like a bug otherwise:
+ * this is a battle royale played backwards. The spiky red things are food, not
+ * hazards. Touching a brighter soul lets you tear its flame out, so the leader
+ * is prey. The winner is the LAST soul to go out \u2014 which, once you say it out
+ * loud, is just "the last one alive".
+ *
+ * ON THE DRAIN FORMULA, so nobody re-derives this the hard way: drain rises
+ * with flame, which means each extra point of flame buys LESS time than the
+ * last \u2014 but it still buys some. Time-to-zero is the integral of dF/drain(F),
+ * which is strictly increasing in starting flame for any positive drain, so no
+ * formula of this shape can ever make "more life" mean "less life". Hoarding is
+ * punished by PREDATION, not by arithmetic: a bright soul is physically bigger,
+ * every dimmer soul can rob it, and the amount robbed scales with the gap.
+ */
+(function (global) {
+  'use strict';
+
+  var J = global.Juice, clamp = J.clamp, lerp = J.lerp;
+
+  /* ============================ TUNING ============================
+   * All distances are in WORLD UNITS. The world is 100 units wide and
+   * WORLD_H tall (derived from the screen aspect), so the game plays
+   * identically on every device and a daily seed is fair for everyone. */
+  var K = {
+    SOULS: 12,
+    FLAME_MAX: 100,
+    FLAME_START: 40,
+
+    // dFlame/dt = -(BASE + K*flame). Diminishing returns on flame: the first 10
+    // points buy ~7s, the tenth 10 buy ~2s. It is a tax on brightness, not a
+    // punishment for it \u2014 see the note at the top of this file.
+    DRAIN_BASE: 1.15,
+    DRAIN_K: 0.045,
+    VOID_DRAIN: 5.5,          // extra drain per second while outside the light
+
+    SPEED_MIN: 27,            // units/s at flame 0 \u2014 a crawl
+    SPEED_SPAN: 30,           // + this much at flame 100 \u2014 bright is fast
+    VOID_SPEED: 0.84,         // speed multiplier out in the dark
+    ACCEL: 9.5,               // how fast a soul reaches its desired velocity (1/s)
+
+    R_MIN: 2.05,              // radius at flame 0
+    R_SPAN: 2.35,             // + this much at flame 100 \u2014 bright is a big target
+
+    EMBER_R: 2.0,
+    EMBER_VALUE: 9,
+    EMBER_LIVE: 10,           // at a full table of 12
+    EMBER_PER_SOUL: 0.9,      // fuel shrinks with the field, so it is always contested
+    EMBER_MIN: 4,
+    EMBER_RESPAWN: 0.4,      // many small pickups beat a few big ones: the
+                              // arena must always show the player something to run at
+    FUEL_DECAY: 0.02,        // respawn interval multiplier per second elapsed
+    EMBER_PULL: 2.2,          // grab radius bonus, forgiving on a phone
+    EMBER_ARM: 1.5,           // seconds a new ember spends inert and visible
+    FUEL_CUTOFF: 40,          // seconds \u2014 after this, no more embers spawn, ever
+
+    // The dark thickens. Without this the midgame settles into a stalemate where
+    // the survivors sit at a comfortable flame and nobody dies for 25 seconds.
+    ENTROPY_PER_SEC: 1 / 110,
+
+    FINALE_SECS: 3.0,         // the last soul always gets a 3s burnout, never 0.1s
+    FINALE_FLAME: 26,         // ...and a last flare-up so there is something to watch
+
+    ELLIPSE_Y: 1.42,          // the light is taller than it is wide \u2014 it has to
+                              // fill a portrait screen, not sit in the middle of one
+    BOUND: 48,                // soft world edge, as a fraction-of-100 semi-axis
+
+    STEAL_MIN_DIFF: 6,        // flame gap needed before contact does anything
+    STEAL_RATIO: 0.42,        // of the gap...
+    STEAL_MIN: 7, STEAL_MAX: 26,
+    STEAL_KEEP: 0.66,         // ...the thief keeps this much; the rest is lost to the void
+    STEAL_CD: 0.7,            // per-pair cooldown, seconds
+    KNOCKBACK: 46,            // units/s applied to the victim
+
+    // Tap to dash: you spend flame to move. Paying life for speed is the whole
+    // game in one button, and the cost is what keeps it from being free.
+    DASH_COST: 6,
+    DASH_SPEED: 2.7,
+    DASH_TIME: 0.26,
+    DASH_CD: 1.0,
+    DASH_MIN_FLAME: 9,
+
+    GRACE: 12,                // seconds before bots will hunt the player
+    SPECTATE_SPEED: 3.4,      // fast-forward multiplier after you die
+    SPECTATE_MAX: 7.0         // real seconds of spectating before we cut to results
+  };
+
+  /* Light-ring schedule: [seconds, radius]. Linear between keyframes. */
+  /* The light closes in stages: a hold to breathe, then a squeeze. Calibrated so
+   * the arena reaches its tightest right as the match resolves (~50s). */
+  var RING = [
+    [0, 47], [7, 47],
+    [15, 35], [20, 35],
+    [27, 25], [32, 25],
+    [39, 16], [43, 16],
+    [50, 9.5], [9999, 9.5]
+  ];
+
+  /* Flame -> colour. Weighted toward the band souls actually occupy (roughly
+   * 5-60): with an evenly spread ramp everything on screen stays blue and the
+   * "you are getting dangerously bright" read never arrives. */
+  var FLAME_RAMP = [
+    [0.00, '#2b3a8f'],
+    [0.10, '#4361ee'],
+    [0.24, '#7b2ff7'],
+    [0.40, '#c026d3'],
+    [0.55, '#ff2d55'],
+    [0.72, '#ff9f1c'],
+    [0.88, '#ffe066'],
+    [1.00, '#fff8e0']
+  ];
+
+  var C = {
+    void:   '#07060d',
+    field:  '#150e28',
+    field2: '#0b0716',
+    ring:   '#7b2ff7',
+    ringHot:'#ff2d55',
+    ember:  '#ff2d55',
+    emberIn:'#ffd0dc',
+    you:    '#00f5d4',
+    text:   '#f2eefc',
+    dim:    '#9a90b8'
+  };
+
+  var NAMES = [
+    'CINDER', 'WICK', 'SOOT', 'PYRE', 'GLIM', 'ASHFALL', 'SMOLDER', 'KINDLE',
+    'FLICKER', 'DUSK', 'EMBERLY', 'CHAR', 'TALLOW', 'GLOAM', 'MURK', 'RUST',
+    'xX_ashes_Xx', 'notdying69', 'ok_i_die', 'final_flame', 'mom_gets_off_at_6',
+    'burnout.exe', 'still_here', 'unlit', 'lastlight', 'DNF', 'afk_forever'
+  ];
+
+  var ARCH = {
+    GREEDY:  { ember: 1.60, hunt: 0.55, flee: 0.55, ring: 1.0, sep: 0.55, wander: 0.30, target: [58, 78], react: 0.10, fear: 0.7 },
+    HUNTER:  { ember: 0.80, hunt: 1.75, flee: 0.35, ring: 1.0, sep: 0.35, wander: 0.22, target: [28, 44], react: 0.08, fear: 0.5 },
+    COWARD:  { ember: 1.05, hunt: 0.25, flee: 1.55, ring: 1.45, sep: 0.90, wander: 0.30, target: [31, 47], react: 0.12, fear: 1.2 },
+    CAMPER:  { ember: 0.85, hunt: 0.70, flee: 0.85, ring: 1.6, sep: 0.70, wander: 0.18, target: [34, 52], react: 0.12, fear: 0.9 },
+    CHAOS:   { ember: 1.15, hunt: 1.10, flee: 0.70, ring: 0.9, sep: 0.45, wander: 0.95, target: [40, 70], react: 0.06, fear: 0.6 }
+  };
+  var ARCH_KEYS = ['GREEDY', 'HUNTER', 'COWARD', 'CAMPER', 'CHAOS'];
+
+  /* ============================ ENTITIES ============================ */
+
+  function Soul(id, name, isPlayer) {
+    this.id = id;
+    this.name = name;
+    this.isPlayer = !!isPlayer;
+    this.x = 0; this.y = 0;
+    this.vx = 0; this.vy = 0;
+    this.dx = 0; this.dy = 0;          // desired direction, unit-ish
+    this.flame = K.FLAME_START;
+    this.alive = true;
+    this.rank = 0;
+    this.diedAt = 0;
+    this.arch = 'CAMPER';
+    this.w = ARCH.CAMPER;
+    this.targetFlame = 45;
+    this.think = 0;                    // reaction timer
+    this.wanderA = 0;
+    this.flash = 0;                    // white hit flash, seconds
+    this.cd = null;                     // steal cooldown map, id -> time
+    this.trail = 0;
+    this.throttle = 0;
+    this.dashT = 0; this.dashCd = 0; this.dashX = 0; this.dashY = 0;
+    this.dashes = 0;
+    this.kills = 0;
+    this.eaten = 0;
+    this.stolen = 0;
+    this.peak = K.FLAME_START;
+  }
+  Soul.prototype.radius = function () { return K.R_MIN + K.R_SPAN * (this.flame / K.FLAME_MAX); };
+  Soul.prototype.speed = function () { return K.SPEED_MIN + K.SPEED_SPAN * (this.flame / K.FLAME_MAX); };
+  Soul.prototype.color = function () { return J.rampHex(FLAME_RAMP, this.flame / K.FLAME_MAX, 14); };
+
+  function Ember(x, y, seedPhase, arm) {
+    this.x = x; this.y = y;
+    this.alive = true;
+    this.spin = seedPhase;
+    this.born = 0;
+    this.pop = 0;                       // 0..1 spawn-in animation
+    this.arm = arm;                     // seconds until it can be eaten
+    this.lit = 0;                       // 0..1 ignition flash
+  }
+
+  /* ============================ GAME ============================ */
+
+  function Game(opts) {
+    this.seedStr = opts.seed;
+    this.mode = opts.mode || 'daily';
+    this.rng = new global.RNG.Rng(this.seedStr);
+    this.vrng = new global.RNG.Rng(this.seedStr + ':fx');   // visual-only stream
+    // Fixed, not derived from the screen: two players on different phones must
+    // get the identical arena or the daily's shared score means nothing.
+    this.worldH = Game.WORLD_H;
+
+    this.t = 0;                    // simulated seconds
+    this.real = 0;                 // wall seconds since match start
+    this.state = 'countdown';      // countdown | play | spectate | finale | done
+    this.souls = [];
+    this.embers = [];
+    this.emberTimer = 0;
+    this.aliveCount = K.SOULS;
+    this.player = null;
+    this.ringR = RING[0][1];
+    this.ringPrev = this.ringR;
+    this.ringStage = 0;
+    this.finaleT = 0;
+    this.spectateT = 0;
+    this.fuelGone = false;
+    this._soloRate = 0;
+    this.letGoUsed = false;
+    this.result = null;
+
+    this.cam = new J.Camera();
+    this.stop = new J.Hitstop();
+    this.fx = new J.Particles(460);
+    this.txt = new J.FloatText(20);
+
+    this.events = [];              // drained by the UI layer each frame
+    this.samples = [];             // [t, flame] of the player, for the share strip
+    this.sampleT = 0;
+    this.log = [];                 // kill/death feed
+    this.reduced = false;
+    this.showNames = true;
+    this.auto = !!opts.auto;        // headless balance runs drive the player with bot AI
+
+    this._build();
+  }
+
+  Game.prototype.emit = function (type, data) { this.events.push({ type: type, data: data }); };
+
+  Game.prototype._build = function () {
+    var rng = this.rng;
+    var names = NAMES.slice();
+    rng.shuffle(names);
+    var cx = 50, cy = this.worldH / 2;
+
+    // Souls start evenly spaced on a circle so nobody is born with an edge,
+    // with a small seeded jitter so the daily still feels hand-dealt.
+    var a0 = rng.angle();
+    for (var i = 0; i < K.SOULS; i++) {
+      var isPlayer = (i === 0);
+      var s = new Soul(i, isPlayer ? 'YOU' : names[i - 1] || ('SOUL' + i), isPlayer);
+      var a = a0 + (i / K.SOULS) * Math.PI * 2 + rng.range(-0.06, 0.06);
+      var rad = 0.63 + rng.range(-0.05, 0.05);           // fraction of the ring
+      s.x = cx + Math.cos(a) * rad * this.ringR;
+      s.y = cy + Math.sin(a) * rad * this.ringR * K.ELLIPSE_Y;
+      s.wanderA = rng.angle();
+      s.cd = Object.create(null);
+      if (!isPlayer || this.auto) {
+        s.arch = rng.pick(ARCH_KEYS);
+        s.w = ARCH[s.arch];
+        s.targetFlame = rng.range(s.w.target[0], s.w.target[1]);
+        s.think = rng.range(0, s.w.react);
+        if (!isPlayer) s.flame = K.FLAME_START + rng.range(-9, 9);
+      }
+      this.souls.push(s);
+      if (isPlayer) this.player = s;
+    }
+
+    for (var e = 0; e < K.EMBER_LIVE; e++) this._spawnEmber(true);
+  };
+
+  /* Normalised distance from the centre of the light: <=1 is inside, whatever
+   * the ring's current size. All the "am I in the dark" logic goes through this. */
+  Game.prototype.nd = function (x, y, r) {
+    r = r === undefined ? this.ringR : r;
+    var dx = (x - 50) / r;
+    var dy = (y - this.worldH / 2) / (r * K.ELLIPSE_Y);
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+  Game.prototype.ringRY = function () { return this.ringR * K.ELLIPSE_Y; };
+
+  Game.prototype._ringRadius = function (t) {
+    for (var i = 1; i < RING.length; i++) {
+      if (t <= RING[i][0]) {
+        var a = RING[i - 1], b = RING[i];
+        var k = (t - a[0]) / Math.max(0.001, b[0] - a[0]);
+        return lerp(a[1], b[1], J.Ease.inOutCubic(clamp(k, 0, 1)));
+      }
+    }
+    return RING[RING.length - 1][1];
+  };
+
+  Game.prototype._spawnEmber = function (initial) {
+    var rng = this.rng;
+    var cx = 50, cy = this.worldH / 2;
+    // Rejection-sample a spot inside the light that isn't on top of anyone.
+    for (var tries = 0; tries < 32; tries++) {
+      var a = rng.angle();
+      var rr = 0.40 + 0.55 * Math.sqrt(rng.float());      // fraction of the ring
+      var x = cx + Math.cos(a) * rr * this.ringR;
+      var y = cy + Math.sin(a) * rr * this.ringR * K.ELLIPSE_Y;
+      var ok = true;
+      for (var i = 0; i < this.souls.length; i++) {
+        var s = this.souls[i];
+        if (!s.alive) continue;
+        var d = Math.hypot(s.x - x, s.y - y);
+        if (d < (initial ? 8 : 5)) { ok = false; break; }
+      }
+      if (!ok) continue;
+      for (var j = 0; j < this.embers.length; j++) {
+        if (Math.hypot(this.embers[j].x - x, this.embers[j].y - y) < 6.5) { ok = false; break; }
+      }
+      if (!ok) continue;
+      var em = new Ember(x, y, rng.angle(), initial ? K.EMBER_ARM * 0.35 : K.EMBER_ARM);
+      em.born = this.t;
+      this.embers.push(em);
+      return em;
+    }
+    return null;
+  };
+
+  Game.prototype._emberQuota = function () {
+    // No fuel for a soul with nobody left to fight over it \u2014 otherwise the
+    // arena keeps topping up the winner and the final burnout never lands.
+    if (this.aliveCount <= 1) return 0;
+    if (this.t >= K.FUEL_CUTOFF) return 0;
+    return clamp(Math.round(this.aliveCount * K.EMBER_PER_SOUL), K.EMBER_MIN, K.EMBER_LIVE);
+  };
+
+  /* ---------------- update ---------------- */
+
+  Game.prototype.update = function (rdt, input) {
+    this.real += rdt;
+    this.cam.update(rdt);
+
+    if (this.state === 'countdown') return;
+
+    var speed = 1;
+    if (this.state === 'spectate') speed = K.SPECTATE_SPEED;
+    if (this.state === 'finale') speed = 0.55;              // slow-mo hero death
+
+    var dt = this.stop.consume(rdt) * speed;
+    if (dt <= 0) { this.fx.update(rdt); this.txt.update(rdt); return; }
+
+    // Clamp the step so a backgrounded tab can't teleport everyone.
+    dt = Math.min(dt, 0.05 * speed);
+
+    this.t += dt;
+    this._updateRing(dt);
+    this._updateEmbers(dt);
+    this._updateSouls(dt, input);
+    this._collide(dt);
+    this._drain(dt);
+
+    this.fx.update(dt);
+    this.txt.update(dt);
+
+    // Sample the player's flame for the shareable timeline strip.
+    this.sampleT += dt;
+    if (this.sampleT >= 0.4) {
+      this.sampleT = 0;
+      this.samples.push([this.t, this.player.alive ? this.player.flame : 0]);
+    }
+
+    if (this.state === 'spectate') {
+      this.spectateT += rdt;
+      if (this.spectateT >= K.SPECTATE_MAX) this._finish();
+    }
+    if (this.state === 'finale') {
+      this.finaleT += dt;
+    }
+  };
+
+  Game.prototype._updateRing = function (dt) {
+    var target = this._ringRadius(this.t);
+    if (target < this.ringPrev - 0.001 && this.ringStage === 0) {
+      this.ringStage = 1;
+      this.emit('ringMove');
+    } else if (target >= this.ringPrev - 0.001 && this.ringStage === 1) {
+      this.ringStage = 0;
+    }
+    // Warn a beat before each closure so it never feels unfair.
+    var soon = this._ringRadius(this.t + 2.5);
+    if (soon < target - 0.15 && !this._warned) { this._warned = true; this.emit('ringWarn'); }
+    if (soon >= target - 0.15) this._warned = false;
+
+    this.ringPrev = target;
+    this.ringR = target;
+
+    if (!this.fuelGone && this.t >= K.FUEL_CUTOFF) {
+      this.fuelGone = true;
+      for (var i = 0; i < this.embers.length; i++) {
+        var em = this.embers[i];
+        this.fx.burst(this.vrng, em.x, em.y, 10, { colors: [C.ember, '#ff7aa2'], speed: 24, speed2: 70, life: 0.3, life2: 0.7, r: 0.5, r2: 1.4 });
+      }
+      this.embers.length = 0;
+      this.emit('fuelGone');
+    }
+  };
+
+  Game.prototype._updateEmbers = function (dt) {
+    var quota = this._emberQuota();
+    for (var i = this.embers.length - 1; i >= 0; i--) {
+      var em = this.embers[i];
+      em.spin += dt * 1.4;
+      em.pop = Math.min(1, em.pop + dt * 4.5);
+      if (em.arm > 0) {
+        em.arm -= dt;
+        if (em.arm <= 0) {
+          em.arm = 0; em.lit = 1;
+          this.fx.burst(this.vrng, em.x, em.y, 9,
+            { colors: [C.ember, C.emberIn], speed: 18, speed2: 62, life: 0.16, life2: 0.4, r: 0.5, r2: 1.5 });
+          this.emit('emberLit', { x: em.x, y: em.y });
+        }
+      } else if (em.lit > 0) {
+        em.lit = Math.max(0, em.lit - dt * 3);
+      }
+      // An ember caught outside the shrinking light is lost with it.
+      if (this.nd(em.x, em.y) > 1.02) {
+        this.fx.burst(this.vrng, em.x, em.y, 6, { colors: [C.ember], speed: 10, speed2: 40, life: 0.25, life2: 0.5, r: 0.5, r2: 1.2 });
+        this.embers.splice(i, 1);
+      }
+    }
+    if (this.embers.length < quota) {
+      this.emberTimer -= dt;
+      var guard = 0;
+      while (this.emberTimer <= 0 && this.embers.length < quota && guard++ < 4) {
+        this.emberTimer += K.EMBER_RESPAWN * (1 + this.t * K.FUEL_DECAY);
+        this._spawnEmber(false);
+      }
+      if (this.emberTimer < 0) this.emberTimer = 0;
+    } else {
+      this.emberTimer = 0;
+    }
+  };
+
+  /* ---- bot brains ------------------------------------------------------------
+   * A weighted steering blend. Each behaviour returns a direction; archetype
+   * weights decide the personality. The key line is the flame budget: a bot
+   * that is already brighter than it wants to be stops chasing embers and
+   * starts running away, which is how the player learns the rule by watching. */
+  Game.prototype._steerBot = function (s, dt) {
+    var cx = 50, cy = this.worldH / 2;
+    var w = s.w;
+    var ax = 0, ay = 0;
+    var over = s.flame > s.targetFlame;
+    var f01 = s.flame / K.FLAME_MAX;
+
+    // --- fuel: nearest ember, but only if we actually want to be brighter
+    if (!over && this.embers.length) {
+      var best = null, bestD = 1e9;
+      for (var i = 0; i < this.embers.length; i++) {
+        var em = this.embers[i];
+        var d = Math.hypot(em.x - s.x, em.y - s.y) + em.arm * 5;
+        // Don't chase fuel that's about to fall outside the light.
+        if (this.nd(em.x, em.y) > 0.94) d += 40;
+        if (d < bestD) { bestD = d; best = em; }
+      }
+      if (best) {
+        var hunger = clamp((s.targetFlame - s.flame) / 30, 0.25, 1.4);
+        ax += ((best.x - s.x) / Math.max(0.01, bestD)) * w.ember * hunger;
+        ay += ((best.y - s.y) / Math.max(0.01, bestD)) * w.ember * hunger;
+      }
+    }
+
+    // --- prey and predators. Brighter than me = food. Dimmer than me = danger.
+    var hx = 0, hy = 0, fx = 0, fy = 0;
+    for (var j = 0; j < this.souls.length; j++) {
+      var o = this.souls[j];
+      if (o === s || !o.alive) continue;
+      var dx = o.x - s.x, dy = o.y - s.y;
+      var dd = Math.hypot(dx, dy);
+      if (dd > 34 || dd < 0.01) continue;
+      var pull = 1 - dd / 34;
+      var diff = o.flame - s.flame;
+      if (o.isPlayer && this.t < K.GRACE) continue;          // early-game grace
+      if (diff > K.STEAL_MIN_DIFF) {
+        var greed = clamp(diff / 40, 0.2, 1.2);
+        hx += (dx / dd) * pull * greed; hy += (dy / dd) * pull * greed;
+      } else if (diff < -K.STEAL_MIN_DIFF) {
+        var scare = clamp(-diff / 40, 0.2, 1.3) * w.fear;
+        fx -= (dx / dd) * pull * scare; fy -= (dy / dd) * pull * scare;
+      }
+      // Personal space regardless of flame.
+      if (dd < 9) { fx -= (dx / dd) * (1 - dd / 9) * w.sep; fy -= (dy / dd) * (1 - dd / 9) * w.sep; }
+    }
+    ax += hx * w.hunt + fx * w.flee;
+    ay += hy * w.hunt + fy * w.flee;
+
+    // --- the light. Overwhelming once you're actually outside it.
+    var rx = cx - s.x, ry = cy - s.y;
+    var rd = Math.hypot(rx, ry);
+    var margin = (1 - this.nd(s.x, s.y)) * this.ringR;   // world-ish units to the edge
+    if (rd > 0.01) {
+      var pullIn = 0;
+      if (margin < 0) pullIn = 7.0;                       // outside: nothing else matters
+      else if (margin < 7) pullIn = w.ring * (1.6 - margin / 7);
+      else pullIn = w.ring * 0.14;                         // gentle drift to the middle
+      ax += (rx / rd) * pullIn;
+      ay += (ry / rd) * pullIn;
+    }
+
+    // --- wander so nobody moves like a turret
+    s.wanderA += this.rng.range(-2.4, 2.4) * dt;
+    ax += Math.cos(s.wanderA) * w.wander;
+    ay += Math.sin(s.wanderA) * w.wander;
+
+    // --- endgame: no fuel left, so the only flame left is in other souls
+    if (this.fuelGone) {
+      ax += hx * 0.9; ay += hy * 0.9;
+    }
+
+    var m = Math.hypot(ax, ay);
+    if (m > 0.001) { s.dx = ax / m; s.dy = ay / m; }
+    // A bright bot deliberately eases off \u2014 being fast is what kills it.
+    s.throttle = over ? lerp(1, 0.82, clamp((s.flame - s.targetFlame) / 30, 0, 1)) : 1;
+    if (f01 > 0.9) s.throttle *= 0.92;
+  };
+
+  Game.prototype._updateSouls = function (dt, input) {
+    var cx = 50, cy = this.worldH / 2;
+    for (var i = 0; i < this.souls.length; i++) {
+      var s = this.souls[i];
+      if (!s.alive) continue;
+      s.flash = Math.max(0, s.flash - dt * 4);
+
+      if (s.isPlayer && this.auto) {
+        s.think -= dt;
+        if (s.think <= 0) { s.think = s.w.react; this._steerBot(s, dt); }
+      } else if (s.isPlayer) {
+        if (this.state === 'play' && input && input.mag > 0) {
+          s.dx = input.x; s.dy = input.y;
+          s.throttle = input.mag;
+        } else {
+          s.throttle = 0;
+        }
+      } else {
+        s.think -= dt;
+        if (s.think <= 0) { s.think = s.w.react; this._steerBot(s, dt); }
+      }
+
+      s.dashCd = Math.max(0, s.dashCd - dt);
+      var outside = this.nd(s.x, s.y) > 1;
+      var sp;
+      if (s.dashT > 0) {
+        s.dashT -= dt;
+        s.dx = s.dashX; s.dy = s.dashY;
+        sp = s.speed() * K.DASH_SPEED;
+        if (!this.reduced) {
+          this.fx.spawn({ x: s.x, y: s.y, vx: this.vrng.range(-14, 14), vy: this.vrng.range(-14, 14),
+            life: 0.28, r: this.vrng.range(1.0, 2.2), color: s.color(), drag: 0.85, glow: true });
+        }
+      } else {
+        sp = s.speed() * (outside ? K.VOID_SPEED : 1) * (s.throttle || 0);
+      }
+      var tvx = s.dx * sp, tvy = s.dy * sp;
+      var k = 1 - Math.exp(-K.ACCEL * dt);
+      s.vx += (tvx - s.vx) * k;
+      s.vy += (tvy - s.vy) * k;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+
+      // Soft world bounds: you can flee into the dark, but not off the map.
+      var nb = this.nd(s.x, s.y, K.BOUND);
+      if (nb > 1) {
+        s.x = cx + (s.x - cx) / nb;
+        s.y = cy + (s.y - cy) / nb;
+        s.vx *= 0.4; s.vy *= 0.4;
+      }
+
+      // Trail \u2014 denser and hotter the brighter you are, so a bright soul can see
+      // (and every hunter can see) exactly how much it is carrying.
+      var sped = Math.hypot(s.vx, s.vy);
+      s.trail -= dt * (1 + sped / 22) * (0.6 + s.flame / 60);
+      if (s.trail <= 0 && !this.reduced) {
+        s.trail = 0.05;
+        var col = s.color();
+        this.fx.spawn({
+          x: s.x - s.vx * 0.02, y: s.y - s.vy * 0.02,
+          vx: -s.vx * 0.12 + this.vrng.range(-4, 4),
+          vy: -s.vy * 0.12 + this.vrng.range(-4, 4),
+          life: this.vrng.range(0.22, 0.5), r: this.vrng.range(0.5, 1.5) * (0.6 + s.flame / 90),
+          color: col, drag: 0.86, glow: true
+        });
+      }
+    }
+  };
+
+  Game.prototype._collide = function (dt) {
+    // Ember pickups
+    for (var i = this.embers.length - 1; i >= 0; i--) {
+      var em = this.embers[i];
+      for (var j = 0; j < this.souls.length; j++) {
+        var s = this.souls[j];
+        if (!s.alive) continue;
+        if (em.arm > 0) continue;                 // still igniting \u2014 not food yet
+        var d = Math.hypot(s.x - em.x, s.y - em.y);
+        if (d < s.radius() + K.EMBER_R + K.EMBER_PULL) {
+          var before = s.flame;
+          s.flame = Math.min(K.FLAME_MAX, s.flame + K.EMBER_VALUE);
+          s.peak = Math.max(s.peak, s.flame);
+          s.eaten++;
+          this.embers.splice(i, 1);
+          this.fx.burst(this.vrng, em.x, em.y, s.isPlayer ? 20 : 10,
+            { colors: [C.ember, C.emberIn, '#ff9f1c'], speed: 30, speed2: 120, life: 0.22, life2: 0.55, r: 0.6, r2: 1.9 });
+          if (s.isPlayer) {
+            this.txt.add(em.x, em.y - 4, '+' + Math.round(s.flame - before), '#ffd0dc', 13);
+            this.cam.shake(0.16);
+            this.stop.hit(0.035);
+            this.emit('pickup', { n: s.eaten });
+          }
+          break;
+        }
+      }
+    }
+
+    // Soul vs soul: the brighter one loses. Always.
+    for (var a = 0; a < this.souls.length; a++) {
+      var A = this.souls[a];
+      if (!A.alive) continue;
+      for (var b = a + 1; b < this.souls.length; b++) {
+        var B = this.souls[b];
+        if (!B.alive) continue;
+        var dx = B.x - A.x, dy = B.y - A.y;
+        var dd = Math.hypot(dx, dy);
+        var rr = A.radius() + B.radius();
+        if (dd > rr || dd < 0.0001) continue;
+
+        // Always resolve the overlap so souls never stack.
+        var push = (rr - dd) * 0.5;
+        A.x -= (dx / dd) * push; A.y -= (dy / dd) * push;
+        B.x += (dx / dd) * push; B.y += (dy / dd) * push;
+
+        var key = A.id + ':' + B.id;
+        if ((A.cd[key] || 0) > this.t) continue;
+
+        var diff = A.flame - B.flame;
+        if (Math.abs(diff) < K.STEAL_MIN_DIFF) continue;
+        var bright = diff > 0 ? A : B;
+        var dim = diff > 0 ? B : A;
+        var amount = clamp(Math.abs(diff) * K.STEAL_RATIO, K.STEAL_MIN, K.STEAL_MAX);
+        amount = Math.min(amount, bright.flame);
+        bright.flame -= amount;
+        dim.flame = Math.min(K.FLAME_MAX, dim.flame + amount * K.STEAL_KEEP);
+        dim.peak = Math.max(dim.peak, dim.flame);
+        dim.stolen += amount;
+        A.cd[key] = B.cd[key] = this.t + K.STEAL_CD;
+
+        var kx = (bright.x - dim.x) / dd, ky = (bright.y - dim.y) / dd;
+        bright.vx += kx * K.KNOCKBACK; bright.vy += ky * K.KNOCKBACK;
+        dim.vx -= kx * K.KNOCKBACK * 0.35; dim.vy -= ky * K.KNOCKBACK * 0.35;
+        bright.flash = 1;
+
+        var mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+        this.fx.burst(this.vrng, mx, my, 22,
+          { colors: [bright.color(), '#ffffff', dim.color()], speed: 40, speed2: 170, life: 0.2, life2: 0.6, r: 0.7, r2: 2.2, shape: 1 });
+
+        if (dim.isPlayer) {
+          this.txt.add(mx, my - 5, '+' + Math.round(amount * K.STEAL_KEEP), '#00f5d4', 15);
+          this.cam.shake(0.38); this.stop.hit(0.075);
+          this.emit('steal', { from: bright.name });
+        } else if (bright.isPlayer) {
+          this.txt.add(mx, my - 5, '-' + Math.round(amount), '#ff2d55', 15);
+          this.cam.shake(0.5); this.stop.hit(0.09);
+          this.emit('drained', { by: dim.name });
+        } else {
+          this.cam.shake(0.06);
+        }
+      }
+    }
+  };
+
+  Game.prototype._drain = function (dt) {
+    var cx = 50, cy = this.worldH / 2;
+    var entropy = 1 + this.t * K.ENTROPY_PER_SEC;
+    var solo = this.aliveCount === 1;
+    for (var i = 0; i < this.souls.length; i++) {
+      var s = this.souls[i];
+      if (!s.alive) continue;
+      if (solo) {
+        // The last soul burning gets a guaranteed FINALE_SECS of screen time.
+        // Left to the normal formula this moment lasts a tenth of a second.
+        if (this._soloRate === 0) {
+          s.flame = Math.max(s.flame, K.FINALE_FLAME);
+          s.peak = Math.max(s.peak, s.flame);
+          this._soloRate = s.flame / K.FINALE_SECS;
+        }
+        s.flame -= this._soloRate * dt;
+        if (s.isPlayer) this._playerOutside = false;
+        if (s.flame <= 0) { s.flame = 0; this._kill(s); }
+        continue;
+      }
+      var d = (K.DRAIN_BASE + K.DRAIN_K * s.flame) * entropy;
+      var outside = this.nd(s.x, s.y) > 1;
+      if (outside) {
+        d += K.VOID_DRAIN;
+        if (s.isPlayer && !this.reduced && this.vrng.float() < dt * 24) {
+          this.fx.spawn({ x: s.x + this.vrng.range(-3, 3), y: s.y + this.vrng.range(-3, 3),
+            vx: this.vrng.range(-16, 16), vy: this.vrng.range(-30, -8),
+            life: 0.4, r: 1.1, color: s.color(), drag: 0.9, glow: true });
+        }
+      }
+      s.flame -= d * dt;
+      if (s.isPlayer) this._playerOutside = outside;
+
+      if (s.flame <= 0) {
+        s.flame = 0;
+        this._kill(s);
+      }
+    }
+  };
+
+  Game.prototype._kill = function (s) {
+    s.alive = false;
+    s.rank = this.aliveCount;        // #1 == died last == won
+    s.diedAt = this.t;
+    this.aliveCount--;
+
+    var col = s.isPlayer ? C.you : '#ffffff';
+    this.fx.burst(this.vrng, s.x, s.y, s.isPlayer ? 64 : 26,
+      { colors: [col, '#ff2d55', '#7b2ff7'], speed: 30, speed2: s.isPlayer ? 210 : 120,
+        life: 0.35, life2: s.isPlayer ? 1.3 : 0.8, r: 0.8, r2: s.isPlayer ? 3.2 : 2.0, drag: 0.93 });
+    this.log.push({ name: s.name, rank: s.rank, t: s.diedAt, player: s.isPlayer });
+
+    if (s.isPlayer) {
+      this.cam.shake(1.0); this.stop.hit(0.28);
+      this.emit('playerDied', { rank: s.rank });
+      if (this.aliveCount === 1) this.embers.length = 0;
+      if (this.aliveCount > 0) {
+        this.state = this.auto ? 'play' : 'spectate';
+        this.spectateT = 0;
+      } else {
+        this._finish();
+      }
+    } else {
+      this.cam.shake(0.18);
+      this.emit('soulDied', { name: s.name, rank: s.rank, left: this.aliveCount });
+      if (this.aliveCount === 1 && this.player.alive) {
+        this.state = 'finale';
+        this.finaleT = 0;
+        this.embers.length = 0;
+        this.emit('finale');
+      } else if (this.aliveCount === 1) {
+        this.embers.length = 0;
+      } else if (this.aliveCount === 0) {
+        this._finish();
+      }
+    }
+  };
+
+  Game.prototype._finish = function () {
+    if (this.state === 'done') return;
+    this.state = 'done';
+    var p = this.player;
+    // Anyone still burning when we cut away is ranked by how much they had left.
+    var stragglers = this.souls.filter(function (s) { return s.alive; })
+      .sort(function (a, b) { return a.flame - b.flame; });
+    for (var i = 0; i < stragglers.length; i++) {
+      stragglers[i].alive = false;
+      stragglers[i].rank = stragglers.length - i;
+      stragglers[i].diedAt = this.t;
+    }
+    this.result = {
+      rank: p.rank || 1,
+      total: K.SOULS,
+      time: p.diedAt || this.t,
+      matchTime: this.t,
+      eaten: p.eaten,
+      stolen: Math.round(p.stolen),
+      peak: Math.round(p.peak),
+      won: (p.rank || 1) === 1,
+      outlasted: (p.rank || 1) - 1,        // how many souls managed to die after you
+      letGo: this.letGoUsed,
+      dashes: p.dashes,
+      seed: this.seedStr,
+      mode: this.mode,
+      samples: this.samples.slice(),
+      standings: this.souls.slice().sort(function (a, b) { return a.rank - b.rank; })
+        .map(function (s) { return { name: s.name, rank: s.rank, t: s.diedAt, player: s.isPlayer }; })
+    };
+    this.emit('finished', this.result);
+  };
+
+  /** The player's current flame loss per second \u2014 what the HUD needle shows. */
+  Game.prototype.playerBurnRate = function () {
+    var s = this.player;
+    if (!s.alive) return 0;
+    if (this.aliveCount === 1 && this._soloRate > 0) return this._soloRate;
+    var d = (K.DRAIN_BASE + K.DRAIN_K * s.flame) * (1 + this.t * K.ENTROPY_PER_SEC);
+    if (this.nd(s.x, s.y) > 1) d += K.VOID_DRAIN;
+    return d;
+  };
+
+  /* The game's stated goal is to die, so death is on offer at all times and
+   * without a confirmation. Almost everyone presses it once, goes out 9th, and
+   * learns the entire design in one second: it never asked you to die, it asked
+   * you to die LAST. */
+  Game.prototype.letGo = function () {
+    var s = this.player;
+    if (!s.alive || (this.state !== 'play' && this.state !== 'finale')) return false;
+    s.flame = 0;
+    this.letGoUsed = true;
+    this.fx.burst(this.vrng, s.x, s.y, 30,
+      { colors: ['#00f5d4', '#ffffff'], speed: 20, speed2: 150, life: 0.3, life2: 1.0, r: 0.7, r2: 2.6 });
+    this._kill(s);
+    return true;
+  };
+
+  /** Returns true if the dash fired. Costs flame, so it is never free speed. */
+  Game.prototype.dash = function () {
+    var s = this.player;
+    if (!s.alive || this.state !== 'play') return false;
+    if (s.dashCd > 0 || s.dashT > 0) return false;
+    if (s.flame < K.DASH_MIN_FLAME) { this.emit('dashFail'); return false; }
+    var dx = s.dx, dy = s.dy;
+    var m = Math.hypot(dx, dy);
+    if (m < 0.01) {                       // standing still: dash the way you're moving
+      m = Math.hypot(s.vx, s.vy);
+      if (m < 0.01) return false;
+      dx = s.vx / m; dy = s.vy / m;
+    } else { dx /= m; dy /= m; }
+    s.dashX = dx; s.dashY = dy;
+    s.dashT = K.DASH_TIME;
+    s.dashCd = K.DASH_CD;
+    s.flame = Math.max(0, s.flame - K.DASH_COST);
+    s.dashes++;
+    this.fx.burst(this.vrng, s.x, s.y, 14,
+      { colors: [s.color(), '#ffffff'], dir: Math.atan2(-dy, -dx), spread: 0.8,
+        speed: 40, speed2: 130, life: 0.18, life2: 0.42, r: 0.6, r2: 1.8, shape: 1 });
+    this.cam.shake(0.12);
+    this.emit('dash');
+    return true;
+  };
+
+  Game.prototype.startPlay = function () {
+    if (this.state === 'countdown') this.state = 'play';
+  };
+  Game.prototype.skipSpectate = function () {
+    if (this.state === 'spectate') this._finish();
+  };
+
+  Game.WORLD_H = 178;      // fixed 100 x 178 world \u2014 see the constructor
+  Game.K = K;
+  Game.C = C;
+  Game.RING = RING;
+  Game.FLAME_RAMP = FLAME_RAMP;
+  Game.Soul = Soul;
+  global.Game = Game;
+})(typeof self !== 'undefined' ? self : this);
+
+/* ===== js/share.js ===== */
+/* share.js \u2014 the part that actually spreads.
+ *
+ * THE BURNLINE: your run rendered as a strip of emoji blocks, one per 3 seconds
+ * survived, coloured by how bright you burned in that window. It inverts
+ * Wordle's grid on purpose \u2014 here a LONGER strip is a better run, and a great
+ * run is almost entirely black, because staying dim is how you last. Two strips
+ * side by side in a group chat teach the whole game with no words.
+ *
+ * The iOS trap this file is built around: transient user activation dies across
+ * an `await`, so navigator.share() must be called synchronously from the click
+ * handler with a payload that already exists. Everything is precomputed at death.
+ */
+(function (global) {
+  'use strict';
+
+  var Store = global.Platform.Store;
+
+  var CELL_SECONDS = 3;
+  var MAX_CELLS = 40;
+  var ROW = 10;
+
+  var GLYPH = {
+    normal:   { low: '\u2b1b', mid: '\ud83d\udfe5', high: '\ud83d\udfe8' },  // \u2b1b \ud83d\udfe5 \ud83d\udfe8
+    contrast: { low: '\u2b1b', mid: '\ud83d\udfe6', high: '\ud83d\udfe7' }   // \u2b1b \ud83d\udfe6 \ud83d\udfe7
+  };
+  var SKULL = '\ud83d\udc80';
+
+  /* ---- streaks ---------------------------------------------------------------
+   * Deliberately non-punishing: playing the daily keeps the streak, losing does
+   * not break it. The counter exists only so returning players have something
+   * of their own to protect. */
+  function loadProgress() {
+    return Store.get('progress', { lastDay: 0, streak: 0, best: 0, wins: 0, plays: 0, bestRank: 99 });
+  }
+  function recordDaily(dayNum, result) {
+    var p = loadProgress();
+    if (p.lastDay !== dayNum) {
+      p.streak = (p.lastDay === dayNum - 1) ? p.streak + 1 : 1;
+      p.lastDay = dayNum;
+    }
+    p.plays++;
+    if (result.won) p.wins++;
+    if (result.rank < p.bestRank) p.bestRank = result.rank;
+    if (p.streak > p.best) p.best = p.streak;
+    Store.set('progress', p);
+    return p;
+  }
+
+  /* ---- the burnline ---------------------------------------------------------- */
+  function burnline(samples, deathTime, contrast) {
+    var g = contrast ? GLYPH.contrast : GLYPH.normal;
+    var cells = [];
+    var total = Math.max(1, Math.ceil(deathTime / CELL_SECONDS));
+    for (var i = 0; i < total && i < MAX_CELLS; i++) {
+      var t0 = i * CELL_SECONDS, t1 = t0 + CELL_SECONDS;
+      var peak = 0, seen = false;
+      for (var j = 0; j < samples.length; j++) {
+        var s = samples[j];
+        if (s[0] >= t0 && s[0] < t1) { peak = Math.max(peak, s[1]); seen = true; }
+      }
+      if (!seen) peak = 0;
+      var pct = peak / 100;
+      cells.push(pct <= 0.33 ? g.low : pct <= 0.66 ? g.mid : g.high);
+    }
+    if (!cells.length) cells.push(g.low);
+    cells[cells.length - 1] = SKULL;                 // the moment you went out
+    var truncated = total > MAX_CELLS;
+
+    var rows = [];
+    for (var k = 0; k < cells.length; k += ROW) rows.push(cells.slice(k, k + ROW).join(''));
+    if (truncated) rows[rows.length - 1] += '\u2795';
+    return rows.join('\n');
+  }
+
+  function mmss(sec) {
+    var m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  /* ---- link ------------------------------------------------------------------ */
+  function baseUrl() {
+    var u = global.location.origin + global.location.pathname;
+    return u.replace(/index\.html$/, '');
+  }
+  function challengeUrl(result, dayNum) {
+    var q = [];
+    if (result.mode === 'daily') q.push('d=' + dayNum);
+    else q.push('s=' + encodeURIComponent(result.seed));
+    q.push('p=' + result.rank);
+    q.push('t=' + Math.round(result.time));
+    var tag = Store.get('tag', '');
+    if (tag) q.push('n=' + encodeURIComponent(tag));
+    return baseUrl() + '?' + q.join('&');
+  }
+
+  /* ---- the message ------------------------------------------------------------ */
+  function buildText(result, dayNum, progress, contrast, ghost) {
+    var L = [];
+    var head = result.mode === 'daily' ? 'LAST ONE DEAD \u00b7 DAY ' + dayNum
+                                       : 'LAST ONE DEAD \u00b7 ' + global.RNG.seedToWords(global.RNG.hashString(result.seed));
+    L.push(head);
+
+    if (result.won) {
+      L.push(SKULL + ' #1 / ' + result.total + ' \u2014 I died LAST');
+    } else if (result.rank <= 3) {
+      L.push('\ud83d\udd25 #' + result.rank + ' / ' + result.total + ' \u2014 so close to dying last');
+    } else if (result.rank >= result.total - 2) {
+      L.push('\ud83d\udd25 #' + result.rank + ' / ' + result.total + ' \u2014 burned out immediately');
+    } else {
+      L.push('\ud83d\udd25 #' + result.rank + ' / ' + result.total + ' \u2014 burned out early');
+    }
+
+    L.push('');
+    L.push(burnline(result.samples, result.time, contrast));
+    L.push('');
+
+    var foot = mmss(result.time) + ' in the dark';
+    if (ghost && ghost.name && ghost.time) {
+      var diff = result.time - ghost.time;
+      foot += diff >= 0 ? ' \u00b7 outlived ' + ghost.name + ' by ' + mmss(Math.abs(diff))
+                        : ' \u00b7 ' + ghost.name + ' outlived me by ' + mmss(Math.abs(diff));
+    } else if (progress && progress.streak > 1) {
+      foot += ' \u00b7 \ud83d\udd25' + progress.streak;
+    }
+    L.push(foot);
+    L.push(challengeUrl(result, dayNum));
+    return L.join('\n');
+  }
+
+  /* ---- delivery ---------------------------------------------------------------
+   * Tier 1 navigator.share (text only \u2014 a `title` or separate `url` gets dropped
+   * unpredictably per target on iOS), tier 2 async clipboard, tier 3 execCommand,
+   * tier 4 show it and let them copy by hand. */
+  var sharing = false;
+
+  function canShare(data) {
+    if (!global.navigator || !navigator.share) return false;
+    try { return !navigator.canShare || navigator.canShare(data); }
+    catch (e) { return false; }
+  }
+
+  function legacyCopy(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) { return false; }
+  }
+
+  /** Must be called directly inside a click handler, with no await before it. */
+  function share(text, cb) {
+    cb = cb || function () {};
+    if (sharing) return;
+    var data = { text: text };
+    if (canShare(data)) {
+      sharing = true;
+      navigator.share(data).then(function () {
+        cb('shared');
+      })['catch'](function (err) {
+        if (err && err.name === 'AbortError') { cb('cancelled'); return; }
+        copy(text, cb);
+      })['finally'](function () { sharing = false; });
+      return;
+    }
+    copy(text, cb);
+  }
+
+  function copy(text, cb) {
+    cb = cb || function () {};
+    if (global.navigator && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { cb('copied'); })
+        ['catch'](function () { cb(legacyCopy(text) ? 'copied' : 'manual'); });
+      return;
+    }
+    cb(legacyCopy(text) ? 'copied' : 'manual');
+  }
+
+  /* Explicit intents \u2014 the desktop path, and the obvious affordance on mobile.
+   * WhatsApp first: it is the default group chat for most of this game's audience. */
+  function intents(text) {
+    var e = encodeURIComponent(text);
+    return {
+      whatsapp: 'https://api.whatsapp.com/send?text=' + e,
+      telegram: 'https://t.me/share/url?url=' + encodeURIComponent(challengeUrlCache || baseUrl()) + '&text=' + e,
+      x: 'https://twitter.com/intent/tweet?text=' + e
+    };
+  }
+  var challengeUrlCache = '';
+
+  /* ---- inbound challenge link ------------------------------------------------- */
+  function parseChallenge() {
+    var q = {};
+    var s = global.location.search.replace(/^\?/, '');
+    if (!s) return null;
+    s.split('&').forEach(function (kv) {
+      var i = kv.indexOf('=');
+      if (i < 0) return;
+      q[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1));
+    });
+    if (!q.d && !q.s) return null;
+    var name = (q.n || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 10).toUpperCase();
+    return {
+      day: q.d ? parseInt(q.d, 10) : null,
+      seed: q.s || null,
+      rank: q.p ? parseInt(q.p, 10) : null,
+      time: q.t ? parseFloat(q.t) : null,
+      name: name || null
+    };
+  }
+  /** Drop the challenger's params so the player's own share links to THEIR run. */
+  function clearChallengeParams() {
+    try {
+      if (global.history && history.replaceState) history.replaceState(null, '', baseUrl());
+    } catch (e) {}
+  }
+
+  global.Share = {
+    burnline: burnline,
+    buildText: buildText,
+    challengeUrl: function (r, d) { challengeUrlCache = challengeUrl(r, d); return challengeUrlCache; },
+    share: share,
+    copy: copy,
+    intents: intents,
+    mmss: mmss,
+    loadProgress: loadProgress,
+    recordDaily: recordDaily,
+    parseChallenge: parseChallenge,
+    clearChallengeParams: clearChallengeParams,
+    CELL_SECONDS: CELL_SECONDS
+  };
+})(typeof self !== 'undefined' ? self : this);
+
+/* ===== js/main.js ===== */
+/* main.js \u2014 app shell: screens, the frame loop, HUD, onboarding and the reveal.
+ * The arena lives in game.js/render.js; this file is everything around it.
+ */
+(function (global) {
+  'use strict';
+
+  var P = global.Platform, Store = P.Store, S = global.Share, A = global.Audio2, R = global.RNG;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var els = {
+    frame: $('frame'), stage: $('stage'), hud: $('hud'),
+    alive: $('hud-alive'), clock: $('hud-clock'), burn: $('hud-burn'), pips: $('pips'),
+    phase: $('hud-phase-label'), bar: $('flamebar-fill'),
+    coach: $('coach'), count: $('countdown'), toast: $('toast'),
+    menu: $('menu'), how: $('how'), settings: $('settings'), results: $('results'),
+    menuSeed: $('menu-seed'), streak: $('streakline'),
+    reveal: $('res-reveal'), strip: $('res-strip'), stats: $('res-stats'), shareNote: $('share-note')
+  };
+
+  var surface = new P.Surface(els.stage);
+  var renderer = new global.Renderer(surface);
+  var input = new global.Input(els.stage);
+  var game = null;
+  var mode = Store.get('mode', 'daily');
+  var challenge = S.parseChallenge();
+  var sharePayload = '';               // built at death; the click handler must not compute it
+  var lastResult = null;
+  var revealTimers = [];
+  var screen = 'menu';
+
+  /* ---------- helpers ---------- */
+  function show(name) {
+    ['menu', 'how', 'settings', 'results'].forEach(function (k) {
+      els[k].classList.toggle('show', k === name);
+    });
+    els.hud.classList.toggle('show', name === null);
+    els.hud.setAttribute('aria-hidden', name === null ? 'false' : 'true');
+    input.enabled = (name === null);
+    if (name !== null) input.reset();
+    screen = name;
+  }
+  /* One pip per soul, so the player never has to parse an ordinal mid-match. */
+  var pipEls = [];
+  function buildPips() {
+    els.pips.innerHTML = '';
+    pipEls = [];
+    for (var i = 0; i < Game.K.SOULS; i++) {
+      var d = document.createElement('div');
+      d.className = 'pip lit';
+      els.pips.appendChild(d);
+      pipEls.push(d);
+    }
+  }
+  function updatePips() {
+    // Sorted so the pips go out left-to-right: the row reads as a countdown.
+    var souls = game.souls;
+    var order = pipOrder;
+    for (var i = 0; i < order.length; i++) {
+      var s = souls[order[i]];
+      var cls = 'pip ' + (s.alive ? (s.isPlayer ? 'you' : 'lit') : 'out');
+      if (pipEls[i].className !== cls) pipEls[i].className = cls;
+    }
+  }
+  var pipOrder = [];
+
+  var toastT = 0;
+  function toast(msg, ms) {
+    els.toast.textContent = msg;
+    els.toast.classList.add('show');
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { els.toast.classList.remove('show'); }, ms || 1800);
+  }
+  function haptic(p) { P.vibrate(p); }
+
+  /* ---------- settings ---------- */
+  var settings = {
+    sound: Store.get('sound', true),
+    haptics: Store.get('haptics', true),
+    shake: Store.get('shake', !P.prefersReducedMotion()),
+    contrast: Store.get('contrast', false),
+    names: Store.get('names', true)
+  };
+  function applySettings() {
+    A.setEnabled(settings.sound);
+    Store.set('sound', settings.sound);
+    Store.set('haptics', settings.haptics);
+    Store.set('shake', settings.shake);
+    Store.set('contrast', settings.contrast);
+    Store.set('names', settings.names);
+    renderer.contrast = settings.contrast;
+    renderer.showNames = settings.names;
+    if (game) { game.cam.enabled = settings.shake; game.reduced = !settings.shake; }
+  }
+  ['sound', 'haptics', 'shake', 'contrast', 'names'].forEach(function (k) {
+    var el = $('set-' + k);
+    el.checked = settings[k];
+    el.addEventListener('change', function () { settings[k] = el.checked; applySettings(); A.play('ui'); });
+  });
+  $('haptic-note').textContent = P.hasHaptics
+    ? 'Vibration supported on this device.'
+    : 'This browser has no vibration API (iOS never has), so haptics do nothing here.';
+
+  /* ---------- menu ---------- */
+  function seedFor(m) {
+    if (challenge) {
+      if (challenge.seed) return challenge.seed;
+      if (challenge.day) return 'LOD-DAY-' + challenge.day;
+    }
+    if (m === 'daily') return R.dailySeedString();
+    return 'E-' + R.dayNumber() + '-' + Math.floor(performance.now() * 1000 % 1e9).toString(36);
+  }
+  function dayNumFor() {
+    if (challenge && challenge.day) return challenge.day;
+    return R.dayNumber();
+  }
+  function refreshMenu() {
+    var p = S.loadProgress();
+    if (challenge) {
+      els.menuSeed.textContent = challenge.name
+        ? ('CHALLENGE FROM ' + challenge.name)
+        : ('CHALLENGE \u00b7 DAY ' + (challenge.day || '?'));
+      $('btn-mode').textContent = 'play today instead';
+    } else if (mode === 'daily') {
+      els.menuSeed.textContent = 'DAILY \u00b7 DAY ' + R.dayNumber();
+      $('btn-mode').textContent = 'switch to endless';
+    } else {
+      els.menuSeed.textContent = 'ENDLESS \u00b7 RANDOM ARENA';
+      $('btn-mode').textContent = 'switch to daily';
+    }
+    var bits = [];
+    if (p.streak > 0) bits.push('streak ' + p.streak + (p.best > p.streak ? ' (best ' + p.best + ')' : ''));
+    if (p.plays > 0) bits.push(p.wins + '/' + p.plays + ' died last');
+    els.streak.textContent = bits.join(' \u00b7 ');
+  }
+
+  /* ---------- onboarding ---------- */
+  var coachSeen = Store.get('coached', 0);
+  var coachQueue = [], coachUntil = 0;
+  function coach(msg, secs) {
+    coachQueue.push([msg, secs || 2.6]);
+  }
+  function pumpCoach(now) {
+    if (now < coachUntil) return;
+    if (!coachQueue.length) { els.coach.classList.remove('show'); return; }
+    var c = coachQueue.shift();
+    els.coach.innerHTML = c[0];
+    els.coach.classList.add('show');
+    coachUntil = now + c[1];
+  }
+
+  /* ---------- match ---------- */
+  var loopId = 0, lastT = 0, acc = 0;
+  var STEP = 1 / 60, MAX_FRAME = 0.25, MAX_STEPS = 5;
+
+  /* Adaptive resolution. Frame cost here is almost entirely fill rate, so on a
+   * phone that can't hold 60fps the right lever is pixels, not effects. Steps
+   * down only, with a long window and hysteresis, so it never oscillates. */
+  var QUALITY_STEPS = [1, 0.8, 0.65, 0.5];
+  var qIndex = 0, qSamples = [], qCooldown = 0;
+  function adaptQuality(frameMs, now) {
+    if (now < qCooldown) return;
+    qSamples.push(frameMs);
+    if (qSamples.length < 90) return;
+    qSamples.sort(function (a, b) { return a - b; });
+    var p70 = qSamples[Math.floor(qSamples.length * 0.7)];
+    qSamples.length = 0;
+    if (p70 > 23 && qIndex < QUALITY_STEPS.length - 1) {
+      qIndex++;
+      surface.setQuality(QUALITY_STEPS[qIndex]);
+      qCooldown = now + 4000;          // let it settle before judging again
+    } else if (p70 < 11 && qIndex > 0) {
+      qIndex--;
+      surface.setQuality(QUALITY_STEPS[qIndex]);
+      qCooldown = now + 8000;          // climb back reluctantly
+    }
+  }
+  var countdownN = 0, countdownT = 0;
+  var seenPickup = false, seenSteal = false, seenDrain = false, warnedOnce = false;
+
+  function startMatch() {
+    A.unlock();
+    cancelAnimationFrame(loopId);
+    revealTimers.forEach(clearTimeout); revealTimers = [];
+
+    var m = challenge ? 'daily' : mode;
+    game = new Game({ seed: seedFor(m), mode: m });
+    game.cam.enabled = settings.shake;
+    game.reduced = !settings.shake;
+    renderer.contrast = settings.contrast;
+    renderer.showNames = settings.names;
+
+    // A challenger's soul is renamed after them, but nothing about the
+    // simulation changes \u2014 the daily has to be identical for everyone or the
+    // shared scores mean nothing.
+    if (challenge && challenge.name) {
+      var idx = 1 + (R.hashString(game.seedStr) % (Game.K.SOULS - 1));
+      game.souls[idx].name = challenge.name;
+      game.ghostSoul = game.souls[idx];
+    }
+
+    // Player pip first, then bots \u2014 the row then reads left-to-right as a
+    // countdown with "you" always in the same place.
+    pipOrder = [0];
+    for (var pi = 1; pi < Game.K.SOULS; pi++) pipOrder.push(pi);
+    buildPips();
+    els.results.classList.remove('settled');
+
+    seenPickup = seenSteal = seenDrain = warnedOnce = false;
+    coachQueue.length = 0; coachUntil = 0;
+    els.coach.classList.remove('show');
+    ghostPassed = false;
+
+    global.__g = game; global.__r = renderer;   // test harness hooks (tools/*.js)
+    show(null);
+    countdownN = 3; countdownT = 0;
+    lastT = performance.now(); acc = 0;
+    A.startMusic();
+    A.setIntensity(0);
+
+    if (coachSeen < 2) {
+      coach('<em>DRAG</em> ANYWHERE TO MOVE', 2.2);
+      coach('THE SPIKES ARE <em>FUEL</em>.<br>RUN <em>INTO</em> THEM.', 3.2);
+    }
+    loopId = requestAnimationFrame(frame);
+  }
+
+  var ghostPassed = false;
+
+  function frame(now) {
+    loopId = requestAnimationFrame(frame);
+    var frameMs = now - lastT;
+    var dt = frameMs / 1000;
+    lastT = now;
+    if (dt > MAX_FRAME) dt = MAX_FRAME;          // a backgrounded tab must not fast-forward the match
+    else adaptQuality(frameMs, now);             // ignore stalls; they aren't render cost
+    acc += dt;
+
+    // Countdown runs on wall time, before the sim starts.
+    if (game.state === 'countdown') {
+      countdownT += dt;
+      if (countdownT >= 0.75) {
+        countdownT = 0;
+        if (countdownN > 0) {
+          els.count.textContent = countdownN === 0 ? '' : countdownN;
+          els.count.classList.remove('tick');
+          void els.count.offsetWidth;                 // restart the CSS animation
+          els.count.classList.add('tick');
+          A.play('count', 3 - countdownN);
+          haptic(12);
+          countdownN--;
+        } else {
+          els.count.textContent = 'BURN';
+          toast('BE THE LAST TO DIE', 2400);
+          els.count.classList.remove('tick');
+          void els.count.offsetWidth;
+          els.count.classList.add('tick');
+          A.play('count', 3);
+          haptic([18, 40, 18]);
+          game.startPlay();
+        }
+      }
+      acc = 0;
+    }
+
+    var steps = 0;
+    while (acc >= STEP && steps < MAX_STEPS) {
+      game.update(STEP, input);
+      acc -= STEP; steps++;
+    }
+    if (steps === MAX_STEPS) acc = 0;             // fell behind; drop the backlog rather than spiral
+
+    drainEvents();
+    updateHud();
+    pumpCoach(now / 1000);
+    renderer.draw(game, input, now / 1000);
+  }
+
+  function drainEvents() {
+    var ev = game.events;
+    for (var i = 0; i < ev.length; i++) {
+      var e = ev[i];
+      switch (e.type) {
+        case 'pickup':
+          A.play('pickup', Math.min(6, e.data.n)); haptic(14);
+          if (!seenPickup) {
+            seenPickup = true;
+            if (coachSeen < 2) coach('FUEL. BUT <em>BRIGHT BURNS FASTER</em>.', 2.8);
+          }
+          break;
+        case 'steal':
+          A.play('steal'); haptic([22, 26, 22]);
+          if (!seenSteal) { seenSteal = true; if (coachSeen < 2) coach('YOU TORE ITS FLAME OUT.<br>THE <em>DIM</em> EAT THE <em>BRIGHT</em>.', 2.8); }
+          break;
+        case 'drained':
+          A.play('drained'); haptic([34, 30, 34, 30, 44]);
+          if (!seenDrain) { seenDrain = true; if (coachSeen < 2) coach('IT ROBBED YOU BECAUSE<br>YOU WERE <em>BRIGHTER</em>.', 2.8); }
+          break;
+        case 'emberLit': A.play('ui'); break;
+        case 'dash': A.play('ui'); haptic(10); break;
+        case 'dashFail': toast('TOO DIM TO DASH', 900); break;
+        case 'soulDied':
+          A.play('soulOut', Game.K.SOULS - e.data.left);
+          if (game.ghostSoul && e.data.name === game.ghostSoul.name) toast(e.data.name + ' IS OUT', 1400);
+          break;
+        case 'ringWarn':
+          A.play('ringWarn');
+          if (coachSeen < 2 && !warnedOnce) { warnedOnce = true; coach('THE LIGHT IS CLOSING.', 2.0); }
+          break;
+        case 'ringMove': A.play('ringMove'); break;
+        case 'fuelGone': A.play('danger'); toast('NO FUEL LEFT \u2014 TAKE IT FROM SOMEONE', 2400); break;
+        case 'finale': A.play('danger'); haptic([60, 40, 60]); break;
+        case 'playerDied': A.play('death'); haptic([90, 60, 140]); break;
+        case 'finished': onFinished(e.data); break;
+      }
+    }
+    ev.length = 0;
+
+    // Music tightens as the arena empties.
+    A.setIntensity(1 - (game.aliveCount - 1) / (Game.K.SOULS - 1));
+
+    if (!ghostPassed && challenge && challenge.time && game.player.alive && game.t > challenge.time) {
+      ghostPassed = true;
+      toast('YOU OUTLIVED ' + (challenge.name || 'THEM'), 2200);
+      haptic([30, 30, 30]);
+    }
+  }
+
+  function updateHud() {
+    var p = game.player;
+    els.alive.textContent = game.aliveCount;
+    els.clock.textContent = S.mmss(game.t);
+    updatePips();
+
+    var f = p.alive ? p.flame : 0;
+    els.bar.style.width = Math.max(0, Math.min(100, f)).toFixed(1) + '%';
+    els.bar.style.background = global.Juice.rampHex(Game.FLAME_RAMP, f / 100, 14);
+
+    // The needle that makes "the fuel is the poison" legible: it climbs the
+    // instant you brighten, so eating is visibly a trade, not a reward.
+    var rate = game.playerBurnRate();
+    els.burn.textContent = '-' + rate.toFixed(1) + '/s';
+    els.burn.style.color = global.Juice.rampHex(Game.FLAME_RAMP, Math.min(1, rate / 9), 10);
+
+    var label, warn = false;
+    if (!p.alive) { label = 'YOU ARE OUT \u2014 TAP TO SKIP'; warn = true; }
+    else if (game.letGoUsed) { label = 'LETTING GO'; warn = true; }
+    else if (game.state === 'finale') { label = 'LAST ONE BURNING'; warn = true; }
+    else if (game.fuelGone) { label = 'NO FUEL LEFT'; warn = true; }
+    else if (game._playerOutside) { label = 'YOU ARE IN THE VOID'; warn = true; }
+    else if (game.ringStage === 1) { label = 'THE LIGHT IS CLOSING'; warn = true; }
+    else label = 'THE LIGHT HOLDS';
+    if (els.phase.textContent !== label) els.phase.textContent = label;
+    els.phase.classList.toggle('warn', warn);
+  }
+
+  /* Deadpan sign-off, drawn from a seeded stream so a given run always gets the
+   * same line \u2014 two players comparing the same daily see the same joke. */
+  var DEATH_LINES = {
+    letGo: [
+      'You had a whole match left and you spent it on a button.',
+      'On purpose. Respect, sort of.',
+      'That was always allowed. That was the point.'
+    ],
+    first: [
+      'First out. Someone has to be.',
+      'You were the brightest thing here. Congratulations.',
+      'Twelve souls, and the dark picked you.'
+    ],
+    bright: [
+      'Too much life. Classic mistake.',
+      'Something dimmer wanted what you were carrying.',
+      'You made yourself the biggest fire in the room.'
+    ],
+    dim: [
+      'Ran out. The boring one.',
+      'You were almost nothing, and then you were.',
+      'The dark did most of the work.'
+    ],
+    close: [
+      'One more second.',
+      'Second-last is just first-loser with extra steps.',
+      'You nearly had it. Nearly.'
+    ]
+  };
+  function deathLine(res) {
+    var r = new R.Rng(res.seed + ':epitaph:' + res.rank);
+    var pool = res.letGo ? DEATH_LINES.letGo
+             : res.rank === res.total ? DEATH_LINES.first
+             : res.rank <= 3 ? DEATH_LINES.close
+             : res.peak >= 55 ? DEATH_LINES.bright
+             : DEATH_LINES.dim;
+    return r.pick(pool);
+  }
+
+  /* ---------- results ---------- */
+  function onFinished(res) {
+    lastResult = res;
+    A.stopMusic(0.8);
+    cancelAnimationFrame(loopId);
+    loopId = requestAnimationFrame(idleFrame);
+
+    var dayNum = dayNumFor();
+    var progress = (res.mode === 'daily') ? S.recordDaily(dayNum, res) : S.loadProgress();
+    // Precompute the share string NOW. Building it inside the click handler
+    // would risk losing iOS's transient activation before navigator.share runs.
+    S.challengeUrl(res, dayNum);
+    global.__sharePayload = sharePayload = S.buildText(res, dayNum, progress, settings.contrast,
+      challenge && challenge.name ? { name: challenge.name, time: challenge.time } : null);
+
+    coachSeen = Math.min(9, coachSeen + 1);
+    Store.set('coached', coachSeen);
+
+    renderReveal(res, progress);
+    show('results');
+    // The results panel starts almost transparent so the punchline lands over
+    // the arena, on the player's own death bloom, not after a screen wipe.
+    revealTimers.push(setTimeout(function () {
+      els.results.classList.add('settled');
+    }, res.won ? 3000 : 2200));
+    A.play(res.won ? 'win' : 'lose');
+    haptic(res.won ? [40, 50, 40, 50, 120] : [120]);
+    // The player's own link should carry their run, not the challenger's.
+    if (challenge) { S.clearChallengeParams(); challenge = null; }
+  }
+
+  function renderReveal(res, progress) {
+    els.reveal.className = 'reveal ' + (res.won ? 'win' : 'lose');
+    els.reveal.innerHTML = '';
+    els.strip.textContent = '';
+    revealTimers.forEach(clearTimeout); revealTimers = [];
+
+    function line(cls, html, delay) {
+      var d = document.createElement('div');
+      d.className = cls;
+      d.innerHTML = html;
+      d.style.animationDelay = delay + 'ms';
+      els.reveal.appendChild(d);
+    }
+
+    if (res.won) {
+      // Paced. The joke only works if the second line arrives after the first
+      // has already been read as a defeat.
+      line('r1', 'YOU DIED LAST.', 0);
+      line('r2', '\u2026which means you were the last one alive.', 1200);
+      line('r3', 'LAST ONE DEAD = LAST ONE ALIVE', 2300);
+    } else {
+      // Never a bare ordinal: "#4" means the opposite here to everywhere else,
+      // and one second of "wait, is that good?" at first death loses the player.
+      var winner = (res.standings && res.standings[0]) ? res.standings[0].name : null;
+      line('r1', res.letGo ? 'YOU LET GO.' : 'YOU WENT OUT EARLY.', 0);
+      var fact = res.outlasted === 1 ? 'One soul outlasted you.'
+                                     : res.outlasted + ' souls outlasted you.';
+      if (winner) fact += '<br>' + winner + ' died last.';
+      line('r2', fact, 900);
+      line('r3', 'YOU HAD TO DIE <b>LAST</b>', 1700);
+      line('r4', deathLine(res), 2400);
+    }
+
+    revealTimers.push(setTimeout(function () {
+      els.strip.textContent = S.burnline(res.samples, res.time, settings.contrast);
+    }, res.won ? 2500 : 1900));
+
+    els.stats.innerHTML =
+      '<div>BURNED FOR<b>' + S.mmss(res.time) + '</b></div>' +
+      '<div>OUTLASTED YOU<b>' + res.outlasted + ' / ' + (res.total - 1) + '</b></div>' +
+      '<div>FUEL EATEN<b>' + res.eaten + '</b></div>' +
+      '<div>FLAME STOLEN<b>' + res.stolen + '</b></div>';
+    els.shareNote.textContent = '';
+  }
+
+  /* Keep rendering the frozen arena behind the results screen. */
+  function idleFrame(now) {
+    loopId = requestAnimationFrame(idleFrame);
+    game.cam.update(1 / 60);
+    game.fx.update(1 / 60);
+    game.txt.update(1 / 60);
+    renderer.draw(game, null, now / 1000);
+  }
+
+  /* ---------- input wiring ---------- */
+  input.onTap = function () {
+    if (screen !== null || !game) return;
+    if (game.state === 'spectate') { game.skipSpectate(); return; }
+    game.dash();
+  };
+  global.addEventListener('keydown', function (e) {
+    if (e.key === ' ' && screen === null && game) {
+      e.preventDefault();
+      if (game.state === 'spectate') game.skipSpectate(); else game.dash();
+    }
+    if (e.key === 'Enter' && screen === 'menu') startMatch();
+  });
+
+  /* ---------- buttons ---------- */
+  /* LET GO is held for 600ms, not tapped. The offer of death stays permanent and
+   * un-dialogged, but a thumb that brushes the corner mid-panic doesn't end the run. */
+  (function () {
+    var btn = $('btn-letgo'), timer = 0, armed = false;
+    function cancel() {
+      if (timer) { clearTimeout(timer); timer = 0; }
+      btn.classList.remove('arming');
+      armed = false;
+    }
+    btn.addEventListener('pointerdown', function (e) {
+      e.stopPropagation(); e.preventDefault();
+      if (!game || screen !== null) return;
+      if (game.state === 'spectate') { game.skipSpectate(); return; }
+      if (!game.player.alive) return;
+      armed = true;
+      btn.classList.add('arming');
+      haptic(8);
+      timer = setTimeout(function () {
+        cancel();
+        if (game && game.letGo()) { A.play('death'); haptic([140, 60, 40]); }
+      }, 600);
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) {
+      btn.addEventListener(ev, function (e) { if (armed) { e.stopPropagation(); } cancel(); });
+    });
+    btn.addEventListener('click', function (e) { e.stopPropagation(); e.preventDefault(); });
+  })();
+
+  $('btn-play').addEventListener('click', function () { A.unlock(); A.play('ui'); startMatch(); });
+  $('btn-again').addEventListener('click', function () { A.play('ui'); startMatch(); });
+  $('btn-menu').addEventListener('click', function () {
+    A.play('ui'); cancelAnimationFrame(loopId); refreshMenu(); show('menu');
+  });
+  $('btn-how').addEventListener('click', function () { A.play('ui'); show('how'); });
+  $('btn-how-back').addEventListener('click', function () { A.play('ui'); show('menu'); });
+  $('btn-settings').addEventListener('click', function () { A.play('ui'); show('settings'); });
+  $('btn-settings-back').addEventListener('click', function () { A.play('ui'); applySettings(); show('menu'); });
+  $('btn-mode').addEventListener('click', function () {
+    A.play('ui');
+    if (challenge) { challenge = null; S.clearChallengeParams(); }
+    else { mode = mode === 'daily' ? 'endless' : 'daily'; Store.set('mode', mode); }
+    refreshMenu();
+  });
+
+  // Not async, and it does no work before navigator.share \u2014 that is the whole
+  // reason sharing works on iOS.
+  $('btn-share').addEventListener('click', function () {
+    if (!sharePayload) return;
+    S.share(sharePayload, function (outcome) {
+      if (outcome === 'copied') { toast('COPIED \u2014 GO PASTE IT'); els.shareNote.textContent = 'Result copied to your clipboard.'; }
+      else if (outcome === 'shared') toast('SHARED');
+      else if (outcome === 'manual') {
+        els.shareNote.textContent = sharePayload;
+        toast('SELECT AND COPY BELOW', 2600);
+      }
+    });
+    A.play('ui');
+  });
+
+  /* ---------- lifecycle ---------- */
+  P.onHidden(function () {
+    A.suspend();
+    input.reset();
+  });
+  P.onVisible(function () {
+    lastT = performance.now(); acc = 0;      // don't integrate the time we were away
+    if (settings.sound) A.resume();
+  });
+  surface.onResize = function () {
+    // Mid-match the world stays as dealt; a resize must not change the arena.
+    if (!game) renderer.layout(Game.WORLD_H, 0, 0, 0);
+  };
+
+  // The single-file bundle (tools/bundle.js) ships without a manifest or an
+  // sw.js beside it, so the manifest link doubles as "this is the full site".
+  var isFullSite = !!document.querySelector('link[rel="manifest"]');
+  if (isFullSite && 'serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+    global.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
+
+  /* ---------- boot ---------- */
+  applySettings();
+  refreshMenu();
+  show('menu');
+  if (challenge) toast(challenge.name ? (challenge.name + ' CHALLENGED YOU') : 'CHALLENGE ARENA LOADED', 2600);
+
+  // A still frame of an idle arena behind the title screen.
+  (function preview() {
+    var g = new Game({ seed: 'menu-preview', mode: 'endless', auto: true });
+    g.reduced = false;
+    g.startPlay();
+    var t0 = performance.now();
+    (function tick(now) {
+      if (screen !== 'menu') return;
+      requestAnimationFrame(tick);
+      if (g.state === 'done') { g = new Game({ seed: 'menu-' + (now | 0), mode: 'endless', auto: true }); g.startPlay(); }
+      g.update(1 / 60, null);
+      g.events.length = 0;
+      renderer.draw(g, null, (now - t0) / 1000);
+    })(t0);
+  })();
+})(typeof self !== 'undefined' ? self : this);
+
+</script>

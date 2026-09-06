@@ -565,7 +565,10 @@
     if (!game) renderer.layout(Game.WORLD_H, 0, 0, 0);
   };
 
-  if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+  // The single-file bundle (tools/bundle.js) ships without a manifest or an
+  // sw.js beside it, so the manifest link doubles as "this is the full site".
+  var isFullSite = !!document.querySelector('link[rel="manifest"]');
+  if (isFullSite && 'serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
     global.addEventListener('load', function () {
       navigator.serviceWorker.register('sw.js').catch(function () {});
     });
