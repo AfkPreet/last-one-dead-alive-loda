@@ -204,7 +204,10 @@
       var r = 2.2 * pop;
       var breathe = 1 + Math.sin(t * 3.4 + e.spin * 6) * 0.11;
       var arming = e.arm > 0;
-      var charge = arming ? 1 - e.arm / 1.3 : 1;
+      // Read the arming time from the constant rather than restating it: this
+      // was hardcoded once, the constant later moved, and the fuse then swept
+      // backwards for the first fifth of a second of every respawned ember.
+      var charge = arming ? clamp(1 - e.arm / global.Game.K.EMBER_ARM, 0, 1) : 1;
 
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
