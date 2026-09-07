@@ -97,15 +97,36 @@ Brettel dichromat maths against candidate ramps).
 On top of that, every lamp on screen is labelled with what it is to you *right
 now*:
 
-* **dashed amber ring, ticks pointing in** — brighter than you, so you can take it
-  (the same warm hue as the fuel, because it *is* fuel)
-* **solid crimson ring, spikes pointing out** — dimmer than you, so it is coming for
-  what you hold
-* **nothing** — inside the ±6 dead zone, where contact does nothing at all
+One law covers all of it: **a mark's ticks point the way the flame goes.**
 
-The rings fade with distance and ramp in across the dead zone, so a role never
-pops; the HUD counts the same two sets (`4 TAKE` / `3 RUN`) from the same
-function the renderer draws from, and a test asserts the two can never disagree.
+* **dashed amber arc, barbs radiating out** — brighter than you, so you can take
+  it. Flame is leaving it. The same outward spikes in the same warm hue as the
+  fuel, because prey *is* fuel — learn that the spiky amber thing feeds you and
+  you have learned to read every mark in the game without being told.
+* **solid crimson arc, teeth biting in** — dimmer than you, so it is coming for
+  what you hold. Flame is arriving there.
+* **thin slate arc** — in range, inside the ±6 dead zone, where contact does
+  nothing at all.
+
+That last one is the strongest single fix in this round. At `t = 1s` every lamp
+is within ±6 of the player, so before it the first twenty seconds of a match
+taught the player that this game has no markings — and then a mark appeared with
+nothing to read it against. A slate arc turning amber is the moment the game
+becomes legible, and it only exists if "does nothing" and "too far away" look
+different.
+
+The arc sits on the bearing from that lamp *to you*, so the mark lands in the gap
+you are about to cross, and it is drawn over a dark moat that punches a hole
+through every neighbour's additive bloom. Every dimension is authored in CSS px
+and divided by the world scale, so the marks stop inflating with the camera: at
+endgame zoom the old world-unit strokes rendered at 4.7 px with a 9.4 px dash —
+the same size and shape as the death confetti. Lamps over the ink budget hand
+their mark to a collar on your own ring, prey inside it and threats outside, so
+the rule survives with hue knocked out entirely.
+
+Roles fade with distance and ramp in across the dead zone, so a role never pops;
+the HUD counts the same two sets (`4 TAKE` / `3 RUN`) from the same function the
+renderer draws from, and a test asserts the two can never disagree.
 
 ## The HUD
 
@@ -148,21 +169,45 @@ on screen.
 
 A first-timer gets a five-beat scripted night instead of a match. It is not a
 separate mode — it is a real `Game` with the pressures switched off: three lamps,
-the light held where it starts, no fuel except what a beat puts down by hand, the
-other two lamps frozen as staged props, and a floor under the player's flame so
-nobody can lose while they are reading.
+the light held close so everything is big enough to read, no fuel except what a
+beat puts down by hand, the other two lamps frozen as staged props, and a floor
+under the player's flame so nobody can lose while they are reading.
 
-1. you are the teal one — drag to move
-2. the amber spike is fuel — run into it *(and the burn rate visibly climbs)*
-3. a dashed amber ring means brighter than you — hit it *(a third of it spills)*
-4. now you are the bright one, and a solid crimson ring wants it back
-5. every lamp here runs out — be the last *(one goes out on screen)*
+1. you are the one in the ring — drag to move
+2. the **spikes** are fuel — run into them *(+9 flame, and the burn rate climbs
+   with it)*
+3. a **dashed** ring means brighter than you — hit it *(you keep two thirds; a
+   third burns away in the tearing)*
+4. now **you** are the bright one — a dimmer lamp walks in and takes 23 off you
+5. every lamp here runs out, including yours — two go out on screen
 
-Every beat waits for the player to actually **do** the thing, with a timeout so
-nobody can get stuck, and the whole lesson can be skipped from the HUD or replayed
-from settings. Props taken off the board are neither drawn nor counted in the HUD
-tallies, so the readout never names a rival you cannot see. Then it hands off to a
-real twelve-lamp night.
+Three rules the file keeps, each of them a defect it was written to fix:
+
+**A success line fires only on success.** On a timeout the player is told what is
+still true (`THE FUEL IS STILL THERE`), not what they didn't do. A tutorial that
+tells a motionless player "YOU TORE ITS FLAME OUT" has taught them that the text
+on screen is decoration.
+
+**No colour words** — `DASHED`, `SOLID`, `SPIKES`. The lesson describes shapes, so
+it stays true if the palette moves and it works for a player who cannot tell
+amber from crimson. A test asserts no beat ever names a colour.
+
+**Nothing is parked off the map.** Both props stay on screen the whole lesson and
+only their flame changes, so the lamp count is honest and the player watches a
+mark *change meaning* rather than appear from nowhere — beat 3 leaves one lamp
+level with you, so a slate arc sits beside the dashed one and the contrast is the
+lesson.
+
+Every gap is derived from the player's own flame (`prey = you + 32`,
+`threat = you − 54`), never a constant, so a player who ate well in beat 2 still
+gets a real beat 4. Beat 4 walks the prop into the player rather than waiting on
+a clock, because a beat where nothing happens under a caption saying something
+did is the same lie as the first rule. Both playthroughs — the compliant one and
+the do-nothing one — are driven end to end in `tools/test.js`, which also checks
+that the quoted numbers match what the simulation actually did.
+
+The lesson can be skipped from the HUD or replayed from settings, and then hands
+off to a real twelve-lamp night.
 
 ### The LET GO button
 
@@ -246,8 +291,8 @@ code by `node tools/gen-assets.js`, so the repo ships nothing it cannot rebuild.
 ### Tools
 
 ```sh
-node tools/test.js            # 91 headless assertions: determinism, ranking, roles, the lesson
-node tools/verify.js          # 88 browser checks in Chromium: the lesson, HUD, touch, canvas, perf
+node tools/test.js            # 112 headless assertions: determinism, ranking, roles, the lesson
+node tools/verify.js          # 101 browser checks in Chromium: the lesson, HUD, touch, canvas, perf
 node tools/sim.js 200         # play 200 AI-only matches, report pacing
 node tools/tune.js 140 60     # search the pacing constants against a cost function
 node tools/palette.js         # CIELAB dE + dichromat separation for candidate ramps

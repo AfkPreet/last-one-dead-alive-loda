@@ -483,9 +483,10 @@ async function playTo(page, force) {
       const target = g.souls.filter(s => !s.isPlayer).sort((a, b) => b.flame - a.flame)[0];
       p.x = target.x; p.y = target.y + 0.5;
     });
-    await page.waitForFunction(() => /SPILLED/.test(document.getElementById('tut-line').innerText),
+    await page.waitForFunction(() => /YOU TOOK/.test(document.getElementById('tut-line').innerText),
       null, { timeout: 8000 });
-    ok('taking is acknowledged, and the spill is named', true);
+    ok('taking is acknowledged, and the spill is named',
+      /A THIRD/.test(await page.textContent('#tut-line')), await page.textContent('#tut-line'));
 
     // Beat 4: the lesson walks a dimmer lamp into the player, so something
     // actually happens rather than a clock running under a caption. The copy

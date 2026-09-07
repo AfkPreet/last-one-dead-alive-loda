@@ -3134,6 +3134,7 @@ html, body {
     this.kills = 0;
     this.eaten = 0;
     this.stolen = 0;
+    this.robbed = 0;             // flame torn OUT of this soul by dimmer ones
     this.gave = 0;                     // flame this soul burned as light
     this.spilt = 0;                    // flame this soul destroyed by tearing
     this.peak = K.FLAME_START;
@@ -3208,6 +3209,7 @@ html, body {
     // clock held still.
     this.soulCount = opts.souls || K.SOULS;
     this.holdRing = !!opts.holdRing;    // the light stays where it is
+    this.ringHoldR = opts.ringHoldR || 0;  // ...at this radius; the lesson animates it
     this.noSpawn = !!opts.noSpawn;      // fuel is placed by hand, not by the arena
     this.floor = opts.floor || 0;       // the player cannot be driven below this flame
 
@@ -3260,7 +3262,7 @@ html, body {
   Game.prototype.ringRY = function () { return this.ringR * K.ELLIPSE_Y; };
 
   Game.prototype._ringRadius = function (t) {
-    if (this.holdRing) return RING[0][1];
+    if (this.holdRing) return this.ringHoldR || RING[0][1];
     for (var i = 1; i < RING.length; i++) {
       if (t <= RING[i][0]) {
         var a = RING[i - 1], b = RING[i];
@@ -3625,10 +3627,14 @@ html, body {
         var rr = A.radius() + B.radius();
         if (dd > rr || dd < 0.0001) continue;
 
-        // Always resolve the overlap so souls never stack.
+        // Always resolve the overlap so souls never stack. A frozen soul is a
+        // fixture: it does not get shoved, or the lesson's staging drifts
+        // across the arena as the player leans on it.
         var push = (rr - dd) * 0.5;
-        A.x -= (dx / dd) * push; A.y -= (dy / dd) * push;
-        B.x += (dx / dd) * push; B.y += (dy / dd) * push;
+        var ka = A.frozen ? 0 : (B.frozen ? 2 : 1);
+        var kb = B.frozen ? 0 : (A.frozen ? 2 : 1);
+        A.x -= (dx / dd) * push * ka; A.y -= (dy / dd) * push * ka;
+        B.x += (dx / dd) * push * kb; B.y += (dy / dd) * push * kb;
 
         var key = A.id + ':' + B.id;
         if ((A.cd[key] || 0) > this.t) continue;
@@ -3647,6 +3653,7 @@ html, body {
         dim.flame = Math.min(K.FLAME_MAX, dim.flame + kept);
         dim.peak = Math.max(dim.peak, dim.flame);
         dim.stolen += amount;
+        bright.robbed += amount;
         A.cd[key] = B.cd[key] = this.t + K.STEAL_CD;
 
         var kx = (bright.x - dim.x) / dd, ky = (bright.y - dim.y) / dd;
@@ -3676,7 +3683,9 @@ html, body {
   Game.prototype._drain = function (dt) {
     var cx = 50, cy = this.worldH / 2;
     var entropy = 1 + this.t * K.ENTROPY_PER_SEC;
-    var solo = this.aliveCount === 1;
+    // A floored player must never enter the finale burn-down: that path is a
+    // scripted burn to zero and it is the one place the floor cannot hold.
+    var solo = this.aliveCount === 1 && !this.floor;
     for (var i = 0; i < this.souls.length; i++) {
       var s = this.souls[i];
       if (!s.alive) continue;
@@ -4280,113 +4289,165 @@ html, body {
 /* tutorial.js \u2014 the first night, scripted.
  *
  * Not a separate mode: a real Game with every pressure held off. Three lamps
- * instead of twelve, the light frozen where it starts, fuel placed by hand, the
- * other two lamps frozen as props, and a floor under the player's flame so
- * nobody can lose while they are reading. Each beat waits for the player to DO
- * the thing rather than for a clock, with a timeout so nobody can get stuck,
- * and the whole thing can be skipped from the HUD.
+ * instead of twelve, the light held close so everything is big enough to read,
+ * no fuel except what a beat puts down by hand, the other two lamps frozen as
+ * staged props, and a floor under the player's flame so nobody can lose while
+ * they are reading.
  *
- * What it teaches is the READING of the screen, in the order the screen is
- * built: you are the teal caret, violet is flame, and warm amber means "run
- * into this" -- the fuel, and a dashed ring around anything brighter than you.
- * Crimson means it costs you: a solid crimson ring is a lamp that robs you.
+ * Three rules this file keeps:
+ *
+ *   1. A beat's `after` line fires ONLY when the player did the thing. If the
+ *      timeout ends the beat, the `fail` line says what is still true. A
+ *      tutorial that tells a motionless player "YOU TORE ITS FLAME OUT" has
+ *      taught them that the text on screen is decoration.
+ *   2. No colour words. DASHED, SOLID, SPIKES. The lesson describes shapes, so
+ *      it stays true if the palette moves and it works for a player who cannot
+ *      see the difference between amber and crimson.
+ *   3. Nothing is parked off the map. Both props stay on screen the whole
+ *      lesson and only their flame changes, so "3 LEFT" is honest and the
+ *      player watches a mark change meaning rather than appear from nowhere.
+ *
+ * Every gap is derived from the player's own flame, never a constant, so a
+ * player who ate well in beat 2 still gets a real beat 4.
  */
 (function (global) {
   'use strict';
 
   var Store = global.Platform.Store;
+  var HOME_R = 30;          // the held light: tight enough that the marks are legible
 
-  /* Each beat: what it says, what ends it, what it stages, and the line shown
-   * once it's done. `done(t)` is true when the lesson has actually landed. */
-  function build(g) {
+  function build(g, T) {
     var cx = 50, cy = g.worldH / 2;
     var p = g.souls[0];
     var a = g.souls[1], b = g.souls[2];
+    var K = global.Game.K;
 
-    // Take a prop off the board. Frozen souls don't burn, drift or think, and an
-    // off-board one is not drawn and not counted in the HUD tallies \u2014 so the
-    // readout never names a rival the player cannot see.
-    function park(s) {
-      s.frozen = true; s.offBoard = true;
-      s.x = cx; s.y = -80; s.vx = s.vy = 0; s.flame = 50;
-    }
-    function place(s, x, y, f) {
+    /* A prop: on screen, at a fixed mark, not thinking, not burning. The mark
+     * is remembered and re-pinned every frame, because a player who leans on a
+     * prop would otherwise bulldoze it across the arena a pixel at a time. */
+    function put(s, x, y, f) {
       s.frozen = true; s.offBoard = false;
-      s.x = x; s.y = y; s.vx = s.vy = 0; s.flame = f; s.peak = Math.max(s.peak, f);
+      s.x = s.px = x; s.y = s.py = y; s.vx = s.vy = 0;
+      s.flame = f; s.peak = Math.max(s.peak, f);
     }
-    // Everything a beat stages sits BELOW the middle, because the lesson text
-    // owns the band just above it. Nothing you are told to look at is ever
-    // underneath the sentence telling you to look at it.
-    var LOW = cy + 26;
+    /* Beats 3 and 4 stage geometry around the player, so the player goes back
+     * to the middle first. Their flame is never lowered by staging -- only
+     * their position -- so a good beat-2 run still earns a real beat 4. */
+    function home() { p.x = cx; p.y = cy; p.vx = p.vy = 0; }
+    function repin(s) { if (s.px !== undefined) { s.x = s.px; s.y = s.py; s.vx = s.vy = 0; } }
+    /* What a contact between the player and a soul `gap` brighter/dimmer is
+     * actually worth. The after-lines quote this, so they are arithmetic. */
+    function torn(gap) {
+      return Math.min(K.STEAL_MAX, Math.max(K.STEAL_MIN, gap * K.STEAL_RATIO));
+    }
 
     return [
       {
         id: 'move',
-        say: 'YOU ARE THE <em class="y">TEAL</em> ONE.<br><em>DRAG ANYWHERE</em> TO MOVE.',
+        say: 'YOU ARE THE ONE IN THE <em>RING</em>.<br><em>DRAG ANYWHERE</em> TO MOVE.',
         enter: function () {
-          p.x = cx; p.y = cy; p.flame = 34;
-          park(a); park(b);
+          g.ringHoldR = HOME_R;
+          p.x = cx; p.y = cy; p.flame = 40;
+          put(a, cx, cy - 26, 40);
+          put(b, cx, cy + 26, 40);
           g.embers.length = 0;
         },
-        done: function (t) { return t.moved > 20; },
-        timeout: 15
+        done: function (t) { return t.moved > 14 && t.beat > 0.8; },
+        timeout: 8
       },
       {
         id: 'eat',
-        say: 'THE <em class="f">AMBER SPIKE</em> IS FUEL.<br>RUN <em>INTO</em> IT.',
-        enter: function () { g.embers.length = 0; g.placeEmber(cx + 14, LOW, 0.3); },
-        focus: function () { return LOW; },
+        say: 'THE <em>SPIKES</em> ARE FUEL.<br>RUN <em>INTO</em> THEM.',
+        enter: function () { g.embers.length = 0; g.placeEmber(cx, cy - 15, 0.3); },
+        focus: function () { return cy + 20; },
         done: function () { return p.eaten >= 1; },
-        after: 'YOU BOUGHT SECONDS \u2014<br>AND THE <em>BURN RATE</em> WENT UP WITH THEM.',
-        timeout: 20
+        after: function () {
+          return '+' + K.EMBER_VALUE + ' FLAME \u2014 AND YOUR<br><em>BURN RATE</em> WENT UP WITH IT.';
+        },
+        fail: 'THE FUEL IS STILL THERE.<br>RUN <em>INTO</em> IT.',
+        timeout: 12
       },
       {
         id: 'prey',
-        say: 'A <em class="c">DASHED AMBER RING</em> MEANS<br>BRIGHTER THAN YOU. <em>HIT IT</em>.',
+        say: 'A <em>DASHED</em> RING MEANS<br>BRIGHTER THAN YOU. <em>HIT IT</em>.',
         enter: function () {
-          place(a, cx, LOW, 82);
-          park(b);
-          g.embers.length = 0;
+          g.embers.length = 0; home();
+          // Derived, never a constant. B is left level with the player, so a
+          // neutral mark sits next to the dashed one: the contrast is the point.
+          put(a, cx, cy - 26, Math.min(K.FLAME_MAX, p.flame + 32));
+          put(b, cx, cy + 26, p.flame);
         },
-        focus: function () { return LOW; },
+        tick: function () { repin(a); repin(b); },
+        focus: function () { return cy - 26; },
         done: function () { return p.stolen > 0; },
-        after: 'YOU TORE ITS FLAME OUT \u2014<br>AND <em>A THIRD SPILLED</em> INTO THE DARK.',
-        timeout: 24
+        after: function () {
+          var amt = torn(32);
+          return 'YOU TOOK ' + Math.round(amt * K.STEAL_KEEP) + '. <em>A THIRD</em><br>BURNED AWAY IN THE TEARING.';
+        },
+        // The mark it just fed on goes level with the player, so the player
+        // sees a dashed ring become a neutral one. That transition is the game.
+        afterEnter: function () { a.flame = p.flame; },
+        fail: 'IT IS BRIGHTER THAN YOU.<br>THAT MEANS YOU CAN <em>TAKE</em> IT.',
+        timeout: 14
       },
       {
         id: 'threat',
         say: 'NOW <em>YOU</em> ARE THE BRIGHT ONE.',
         enter: function () {
-          if (p.flame < 64) p.flame = 64;
+          home();
+          if (p.flame < 62) p.flame = 62;
           p.peak = Math.max(p.peak, p.flame);
-          place(b, cx, LOW, 14);
-          park(a);
+          put(a, cx, cy - 40, p.flame);          // level, and well out of the way
+          put(b, cx, cy + 26, Math.max(6, p.flame - 54));
+          T.robbed0 = p.robbed;
         },
-        focus: function () { return LOW; },
-        done: function (t) { return t.beat > 4.2; },
-        after: 'A <em class="t">SOLID CRIMSON RING</em> MEANS<br>IT WANTS WHAT YOU ARE HOLDING.',
-        timeout: 4.4
+        // Props do not think, so the lesson walks this one at the player itself.
+        // Something has to actually happen, or the beat is a clock with a
+        // caption on it.
+        tick: function (dt) {
+          repin(a);
+          if (p.robbed > T.robbed0) return;
+          var dx = p.x - b.x, dy = p.y - b.y;
+          var d = Math.hypot(dx, dy) || 1;
+          b.x += (dx / d) * 22 * dt;
+          b.y += (dy / d) * 22 * dt;
+        },
+        focus: function () { return cy + 26; },
+        done: function () { return p.robbed > T.robbed0; },
+        after: function () {
+          return 'A <em>SOLID</em> RING HUNTS YOU.<br>IT JUST TOOK <em>' +
+                 Math.round(p.robbed - T.robbed0) + '</em>.';
+        },
+        afterEnter: function () { b.flame = p.flame; },
+        fail: 'IT IS DIMMER THAN YOU.<br>IT WANTS WHAT YOU ARE <em>HOLDING</em>.',
+        timeout: 11
       },
       {
-        id: 'goal',
-        say: 'EVERY LAMP HERE RUNS OUT.',
+        id: 'last',
+        say: 'EVERY LAMP HERE RUNS OUT.<br>INCLUDING <em>YOURS</em>.',
         enter: function () {
-          park(a);
-          // Let this one actually go out on screen: the pip drops, the sound
-          // plays, and the rule stops being a sentence.
-          b.frozen = false; b.offBoard = false; b.flame = 1.2; b.x = cx + 12; b.y = LOW;
+          g.embers.length = 0;
+          g.ringHoldR = 22;
+          // Let them actually go out on screen: the pips drop, the sound plays,
+          // and the rule stops being a sentence.
+          a.frozen = false; a.flame = 6.0;
+          b.frozen = false; b.flame = 3.2;
         },
-        focus: function () { return LOW; },
-        done: function (t) { return t.beat > 3.2; },
-        after: 'BE THE <em>LAST</em> ONE.',
-        timeout: 3.4
+        // Either they have gone out or the player has watched them burn down to
+        // nothing; both are the lesson, so there is no failure line here.
+        done: function (t) { return g.aliveCount <= 1 || t.beat > 5.5; },
+        after: '<em>ONE LEFT.</em><br>THAT IS THE WIN.',
+        timeout: 7
       }
     ];
   }
 
   function Tutorial(game) {
     this.g = game;
-    this.beats = build(game);
+    this.robbed0 = 0;
+    this.ring0 = HOME_R;
+    this.wentOut = false;
+    this.beats = build(game, this);
     this.i = -1;
     this.beat = 0;         // seconds inside the current beat
     this.moved = 0;
@@ -4406,7 +4467,7 @@ html, body {
     this.step = this.i + 1;
     if (b.enter) b.enter();
     // Staging teleports the player, and a teleport is not the player moving:
-    // re-anchor after enter() or beat one completes itself before it is read.
+    // re-anchor after enter() or beat one completes itself on the staging.
     this._lastX = this.g.souls[0].x;
     this._lastY = this.g.souls[0].y;
     this.line = b.say;
@@ -4425,10 +4486,17 @@ html, body {
       if (this.afterT <= 0) this.next();
       return;
     }
-    if (b.done(this) || this.beat > b.timeout) {
-      if (b.after) { this.line = b.after; this.afterT = 2.5; }
-      else this.next();
-    }
+    if (b.tick) b.tick(dt, this);
+
+    // The success line fires only on success. On a timeout the player is told
+    // what is still true, not what they did not do.
+    var won = b.done ? b.done(this) : this.beat > b.timeout;
+    if (!won && this.beat <= b.timeout) return;
+    var line = won ? b.after : b.fail;
+    if (won && b.afterEnter) b.afterEnter();
+    if (typeof line === 'function') line = line();
+    if (line) { this.line = line; this.afterT = 2.3; }
+    else this.next();
   };
 
   /** The world Y the lesson text must not cover: whatever the beat has staged,
@@ -4445,11 +4513,12 @@ html, body {
     Tutorial: Tutorial,
     done: function () { return !!Store.get('tutorialDone', false); },
     markDone: function () { Store.set('tutorialDone', true); },
-    /** The arena it runs in: three lamps, a light that never closes, no lethal
-     *  drain on the player and no fuel except what a beat puts down. */
+    /** The arena it runs in: three lamps, a light held close and under the
+     *  lesson's control, no lethal drain on the player, and no fuel except
+     *  what a beat puts down. */
     options: function () {
       return { seed: 'tutorial', mode: 'endless', souls: 3,
-               holdRing: true, noSpawn: true, floor: 12 };
+               holdRing: true, ringHoldR: HOME_R, noSpawn: true, floor: 12 };
     }
   };
 })(typeof self !== 'undefined' ? self : this);
