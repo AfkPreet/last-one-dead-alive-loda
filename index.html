@@ -31,28 +31,59 @@
 
   <!-- ===================== IN-GAME HUD ===================== -->
   <div id="hud" class="layer" aria-hidden="true">
+    <!-- Readouts sat on the arena as dark-on-dark text; the flame bar was
+         literally least visible at flame 2, the moment it mattered most. -->
+    <div class="hud-scrim top"></div>
+    <div class="hud-scrim bot"></div>
+
+    <!-- TOP = the night. Checked between decisions, never during one. -->
     <div class="hud-top">
-      <div class="hud-cell">
-        <div class="hud-label">STILL BURNING</div>
-        <div class="hud-value" id="hud-alive">12</div>
-      </div>
-      <div class="hud-cell hud-mid">
-        <div class="hud-sub" id="hud-clock">0:00</div>
-      </div>
-      <div class="hud-cell hud-right">
-        <!-- The game tells you to die, so it offers you death at all times.
-             Refusing this button for the whole match is the entire game. -->
-        <button id="btn-letgo" class="letgo"><span>LET GO</span></button>
-      </div>
+      <div id="pips" class="pips" aria-hidden="true"></div>
+      <div class="hud-sub" id="hud-clock">0:00</div>
+      <!-- The game tells you to die, so it offers you death at all times.
+           Refusing this button for the whole match is the entire game — but it
+           is a once-a-session button, so it no longer gets top billing. -->
+      <button id="btn-letgo" class="letgo"><span>LET GO</span></button>
     </div>
-    <div id="pips" class="pips" aria-hidden="true"></div>
     <div id="hud-phase-label" class="phase">THE LIGHT HOLDS</div>
-    <div id="burnline-hud">
-      <span class="burn-label">LOSING</span>
-      <span class="burn-rate" id="hud-burn">0.0/s</span>
+
+    <!-- BOTTOM = you. Everything asked every second lives at the thumb. -->
+    <div id="vitals">
+      <div class="vit-life">
+        <div class="vit-eyebrow">BURNS OUT IN</div>
+        <div class="vit-row">
+          <span class="life" id="hud-life">—</span>
+          <span class="burn-rate" id="hud-burn">-0.0/s</span>
+        </div>
+      </div>
+      <!-- The two ring shapes drawn in the arena, counted. -->
+      <span class="tallies" id="tallies">
+        <span class="tally prey" id="tally-prey"><i class="tico"></i><b>0</b><u>TAKE</u></span>
+        <span class="tally threat" id="tally-threat"><i class="tico"></i><b>0</b><u>RUN</u></span>
+      </span>
     </div>
-    <div id="flamebar"><div id="flamebar-fill"></div></div>
+
+    <!-- Not a health bar: the whole field, plotted on one axis. Your fill is
+         where you are; every rival is a mark. Marks sitting ON your fill are
+         dimmer than you and can rob you; marks on the empty track ahead are
+         brighter and are food. The rule is position, so it survives
+         colourblindness and a 320px screen. -->
+    <div id="flamebar">
+      <div id="flamebar-fill"></div>
+      <div id="flamebar-dead"></div>
+      <div id="flamebar-marks"></div>
+    </div>
+    <div id="alarm" class="alarm" aria-hidden="true"></div>
     <div id="coach" class="coach"></div>
+  </div>
+
+  <!-- ===================== TUTORIAL ===================== -->
+  <div id="tut" class="layer tut" aria-hidden="true">
+    <div class="tut-line" id="tut-line"></div>
+    <div class="tut-foot">
+      <div class="tut-dots" id="tut-dots"></div>
+      <button id="btn-tut-skip" class="linkbtn tut-skip">skip the lesson</button>
+    </div>
   </div>
 
   <!-- ===================== TITLE ===================== -->
@@ -97,6 +128,25 @@
         <div class="rule-ico" data-ico="steal"></div>
         <div><b>The dim eat the bright.</b><br><span class="dim">Touch a brighter lamp and you tear the oil straight out of it. A third of it spills and never burns at all — you can win the night and still leave the field darker. Being the biggest fire here makes you food.</span></div>
       </div>
+      <h3 class="h3">READING THE FIELD</h3>
+      <!-- The colour key. Every one of these appears in the arena and nowhere
+           else, so a glance at this list is enough to read a whole match. -->
+      <div class="legend">
+        <div class="lg"><i class="lg-you"></i><b>YOU</b><span>teal caret, always ringed</span></div>
+        <div class="lg"><i class="lg-fuel"></i><b>FUEL</b><span>amber spikes: run into them</span></div>
+        <div class="lg"><i class="lg-prey"></i><b>TAKE</b><span>dashed amber: brighter than you</span></div>
+        <div class="lg"><i class="lg-threat"></i><b>RUN</b><span>solid crimson: dimmer, and coming</span></div>
+      </div>
+      <div class="ramplg">
+        <span>OUT</span><i class="ramp"></i><span>BLINDING</span>
+      </div>
+      <p class="hint">Warm means <i>go to it</i> — fuel and prey are the same amber.
+      Crimson means <i>it costs you</i>. A lamp's own flame is violet, brightening
+      to white, and its size, so brightness is never something you have to measure.</p>
+      <p class="hint">The strip along the bottom of the screen is the whole field on
+      one axis. Your fill is you; every other lamp is a mark. Marks <b>on</b> your
+      fill are dimmer and can rob you. Marks on the <b>empty track ahead</b> are
+      brighter, and are food.</p>
       <div class="rule">
         <div class="rule-ico" data-ico="ring"></div>
         <div><b>The light is closing.</b><br><span class="dim">Outside it the dark strips your oil away. Speed comes from oil, so don't get caught slow and far out.</span></div>
@@ -123,7 +173,8 @@
       <label class="row"><span>High contrast</span><input type="checkbox" id="set-contrast"><i class="sw"></i></label>
       <label class="row"><span>Show lamp names</span><input type="checkbox" id="set-names" checked><i class="sw"></i></label>
       <div class="hint" id="haptic-note"></div>
-      <button id="btn-settings-back" class="btn">BACK</button>
+      <button id="btn-replay-tut" class="btn">REPLAY THE LESSON</button>
+      <button id="btn-settings-back" class="linkbtn">back</button>
     </div>
   </div>
 
@@ -174,6 +225,7 @@
 <script src="js/render.js"></script>
 <script src="js/game.js"></script>
 <script src="js/share.js"></script>
+<script src="js/tutorial.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

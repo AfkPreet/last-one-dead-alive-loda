@@ -7,6 +7,19 @@
 
   var J = global.Juice, clamp = J.clamp, lerp = J.lerp;
   var TAU = Math.PI * 2;
+  // Contact does nothing inside this flame gap, so nothing is drawn inside it.
+  // Read from the simulation rather than copied: a renderer that disagrees with
+  // the rule by one point draws rings around lamps you cannot touch.
+  var DEADZONE = 6;
+  function deadzone() {
+    var G = global.Game;
+    return (G && G.K && G.K.STEAL_MIN_DIFF) || DEADZONE;
+  }
+  /* The palette lives in game.js, which loads after this file, so it is read
+   * lazily and cached. Copying the hexes here is how the arena and the HUD
+   * drifted apart the last time. */
+  var _C = null;
+  function pal() { return _C || (_C = (global.Game && global.Game.C) || {}); }
 
   function Renderer(surface) {
     this.s = surface;
@@ -16,6 +29,7 @@
     this.reduced = false;
     this.zoom = 1;
     this.coachBand = null;     // [top, bottom] in screen px while a coach line shows
+    this.topBand = 0;          // screen px of HUD chrome that names must clear
     this.marker = null;
     this._lastT = 0;
     this._bg = null; this._bgKey = '';
@@ -147,6 +161,10 @@
     this._drawOffscreenPlayer(ctx, game, cw, ch, tSec);
     if (input && input.touching) this._drawStick(ctx, input);
     this._drawVignette(ctx, cw, ch, game);
+    // Last, over the vignette: these are the only marks on screen whose whole
+    // job is to say where to go, and the arena's own bloom was eating them at
+    // exactly the edge they live on.
+    this._drawEdgeMarkers(ctx, game, cw, ch, tSec);
   };
 
   /* The light is drawn in a squashed coordinate space, so one circular gradient
@@ -167,7 +185,8 @@
     ctx.beginPath(); ctx.arc(0, 0, rx, 0, TAU); ctx.clip();
     // Contrast mode DIMS the decorative grid; the labels and the player ring
     // are what get louder (see _drawSouls).
-    ctx.strokeStyle = this.contrast ? 'rgba(123,47,247,.06)' : 'rgba(123,47,247,.13)';
+    // Slate, not violet: the grid used to be the same hue as the lamps on it.
+    ctx.strokeStyle = this.contrast ? 'rgba(96,106,134,.07)' : 'rgba(96,106,134,.16)';
     ctx.lineWidth = 1 / Math.max(0.3, k);
     var step = Math.max(16, rx / 4);
     for (var r = step * 0.5; r < rx * 1.15; r += step) {
@@ -184,8 +203,10 @@
   };
 
   Renderer.prototype._drawRingEdge = function (ctx, game, cx, cy, rx, ry, t) {
+    // Red is reserved for fuel now, so the closing ring signals urgency with
+    // brightness, weight and rate instead of by turning into the food colour.
     var closing = game.ringStage === 1;
-    var col = closing ? '#ff2d55' : '#7b2ff7';
+    var col = closing ? pal().ringHot : pal().ring;
     var pulse = 0.5 + 0.5 * Math.sin(t * (closing ? 9 : 2.4));
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -215,7 +236,7 @@
 
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      J.drawGlow(ctx, e.x, e.y, r * (arming ? 2.4 : 4.4) * breathe, '#ff2d55',
+      J.drawGlow(ctx, e.x, e.y, r * (arming ? 2.4 : 4.4) * breathe, pal().ember,
         arming ? 0.16 + charge * 0.3 : 0.62 + e.lit * 0.5);
       ctx.restore();
 
@@ -235,14 +256,14 @@
       ctx.closePath();
       if (arming) {
         // Inert: an outline, so it is unmistakably "not yet".
-        ctx.strokeStyle = 'rgba(255,45,85,' + (0.35 + charge * 0.45).toFixed(2) + ')';
+        ctx.strokeStyle = J.hexA(pal().ember, 0.35 + charge * 0.45);
         ctx.lineWidth = 0.45;
         ctx.stroke();
       } else {
-        ctx.fillStyle = '#ff2d55';
+        ctx.fillStyle = pal().ember;
         ctx.fill();
         ctx.beginPath(); ctx.arc(0, 0, r * 0.46, 0, TAU);
-        ctx.fillStyle = '#ffd0dc'; ctx.fill();
+        ctx.fillStyle = pal().emberIn; ctx.fill();
       }
       ctx.restore();
 
@@ -250,7 +271,10 @@
         // A fuse everyone in the arena can read: this is worth racing for.
         ctx.beginPath();
         ctx.arc(e.x, e.y, r * 2.5, -Math.PI / 2, -Math.PI / 2 + charge * TAU);
-        ctx.strokeStyle = 'rgba(255,208,220,.55)';
+        // Neutral, deliberately: the fuse means "not yet", which is a different
+        // idea from "food", and it must not read as the amber ring the arena
+        // draws around prey.
+        ctx.strokeStyle = 'rgba(226,222,238,.5)';
         ctx.lineWidth = 0.5;
         ctx.stroke();
       }
@@ -258,75 +282,356 @@
     ctx.restore();
   };
 
+  /* The one rule the arena never showed: on contact, flame runs BRIGHT -> DIM.
+   * A soul brighter than you feeds you; a soul dimmer than you robs you; and
+   * which is which flips as your own flame changes.
+   *
+   * One law, stated once: A MARK'S TICKS POINT THE WAY THE FLAME GOES.
+   * Flame leaves prey, so its barbs radiate OUT -- the same outward spikes, in
+   * the same warm amber, as the fuel, because prey IS fuel. Flame arrives at a
+   * threat, so its teeth bite IN. Learn the spiky amber thing feeds you and you
+   * have learned to read every mark in the game without being told.
+   *
+   *   PREY    amber   dashed, crawling   barbs OUT   run into it
+   *   THREAT  crimson solid, pulsing     teeth IN    run from it
+   *   IDLE    slate   thin, static       no ticks    nothing happens
+   *
+   * IDLE is not decoration. At t=1s every lamp is within +/-6 of the player, so
+   * without it the first twenty seconds of a match teach the player that this
+   * game has no markings at all -- and then a mark appears with nothing to read
+   * it against. A slate arc turning amber is the moment the game becomes
+   * legible, and it only exists if "does nothing" and "too far away" look
+   * different.
+   *
+   * Every dimension is authored in CSS px and divided by the world scale, so
+   * the marks stop inflating with the camera: at endgame zoom the old
+   * world-unit strokes rendered at 4.7px with a 9.4px dash, the same size and
+   * shape as the death confetti.
+   */
+  var DASH = [0, 0], EMPTY = [];
+  var ROLE = [];                                   // scratch, never re-allocated
+  var TIER_HALF = [0.5236, 0.7679, 1.0821];        // 30, 44, 62 degrees
+
+  Renderer.prototype._gatherRoles = function (game) {
+    var me = game.player, n = 0, i;
+    this._roleN = 0;
+    if (!me || !me.alive) return 0;
+    var dz = deadzone();
+    for (i = 0; i < game.souls.length; i++) {
+      var s = game.souls[i];
+      if (!s.alive || s.isPlayer || s.offBoard) continue;
+      var d = Math.hypot(s.x - me.x, s.y - me.y);
+      var sep = d - s.radius() - me.radius();
+      if (sep > 34) continue;                      // the same range the bots see at
+      var e = ROLE[n] || (ROLE[n] = {});
+      var diff = s.flame - me.flame;
+      e.s = s; e.sep = sep; e.d = d; e.gap = Math.abs(diff);
+      e.role = e.gap <= dz ? 0 : (diff > 0 ? 1 : -1);
+      n++;
+    }
+    // Insertion sort over n <= 11, in place: nearest first, no allocation.
+    for (i = 1; i < n; i++) {
+      var k = ROLE[i], j = i - 1;
+      while (j >= 0 && ROLE[j].sep > k.sep) { ROLE[j + 1] = ROLE[j]; j--; }
+      ROLE[j + 1] = k;
+    }
+    // Budget. Two caps with different jobs: `body` is a global ink ceiling;
+    // `full` counts only souls inside 14wu, so in the open field it never fires
+    // and prey worth chasing keeps its bracket all the way out to 34wu. In a
+    // pile-up every soul is inside 14 and the cap bites at once -- and those
+    // souls fall back to a collar on the player's own ring instead.
+    var body = 0, full = 0;
+    for (i = 0; i < n; i++) {
+      var it = ROLE[i];
+      it.collar = (it.sep < 1.6) || (body >= 7) || (it.sep < 14 && full >= 4);
+      if (!it.collar) { body++; if (it.sep < 14) full++; }
+    }
+    this._roleN = n;
+    return n;
+  };
+
+  Renderer.prototype._drawRoles = function (ctx, game, S, t) {
+    var n = this._roleN;
+    if (!n) return;
+    var me = game.player, px = 1 / S;
+    ctx.save();
+    ctx.translate(this.ox, this.oy);
+    ctx.scale(S, S);
+    ctx.lineCap = 'round';
+    // Far to near, so the nearest mark ends up on top.
+    for (var i = n - 1; i >= 0; i--) if (!ROLE[i].collar) this._bracket(ctx, ROLE[i], me, px, t);
+    ctx.restore();
+  };
+
+  Renderer.prototype._bracket = function (ctx, it, me, px, t) {
+    var s = it.s, role = it.role;
+    // The arc always sits on the bearing from the soul TO you, so the mark
+    // lands in the gap you are about to cross.
+    var bear = Math.atan2(me.y - s.y, me.x - s.x);
+    var ar = s.radius() + px * 7;
+    var tier = it.sep < 14 ? 2 : it.sep < 24 ? 1 : 0;
+    var half = role === 0 ? 0.5236 : TIER_HALF[tier];
+    var bold = this.contrast ? 1.5 : 1;
+
+    var a = it.sep > 26 ? 0.5 : it.sep > 14 ? 0.8 : 1;
+    if (role !== 0) a *= Math.min(1, (it.gap - deadzone()) / 4);   // the flip is a fade
+    else a *= 0.55;
+    if (this.contrast) a = Math.min(1, a * 1.35);
+    if (a <= 0.03) return;
+
+    if (role === 0) {
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = pal().idle;
+      ctx.lineWidth = px * 1.6 * bold;
+      ctx.beginPath(); ctx.arc(s.x, s.y, ar, bear - half, bear + half); ctx.stroke();
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    // The moat: a dark stroke under the mark that punches a hole through every
+    // neighbour's additive bloom. This, not shadowBlur, is what makes a mark
+    // survive a pile-up.
+    ctx.globalAlpha = a * 0.55;
+    ctx.strokeStyle = 'rgba(7,6,13,0.9)';
+    ctx.lineWidth = px * 4.6 * bold;
+    ctx.beginPath(); ctx.arc(s.x, s.y, ar, bear - half, bear + half); ctx.stroke();
+
+    var q, ang, c, sn;
+    if (role === 1) {
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = pal().prey;
+      ctx.lineWidth = px * (tier ? 2.4 : 1.8) * bold;
+      DASH[0] = px * 5.5; DASH[1] = px * 4.5;
+      ctx.setLineDash(DASH);
+      if (!this.reduced) ctx.lineDashOffset = -(t * px * 9);
+      ctx.beginPath(); ctx.arc(s.x, s.y, ar, bear - half, bear + half); ctx.stroke();
+      ctx.setLineDash(EMPTY);
+      ctx.lineDashOffset = 0;
+      if (tier > 0) for (q = -1; q <= 1; q++) {
+        ang = bear + q * half * 0.68; c = Math.cos(ang); sn = Math.sin(ang);
+        ctx.beginPath();
+        ctx.moveTo(s.x + c * (ar + px * 1.6), s.y + sn * (ar + px * 1.6));
+        ctx.lineTo(s.x + c * (ar + px * 6.6), s.y + sn * (ar + px * 6.6));
+        ctx.stroke();
+      }
+    } else {
+      ctx.globalAlpha = this.reduced ? a * 0.9 : a * (0.70 + 0.30 * Math.sin(t * 5.5));
+      ctx.strokeStyle = pal().threat;
+      ctx.lineWidth = px * (tier ? 2.8 : 2.0) * bold;
+      ctx.beginPath(); ctx.arc(s.x, s.y, ar, bear - half, bear + half); ctx.stroke();
+      if (tier > 0) for (q = -1; q <= 1; q++) {
+        ang = bear + q * half * 0.68; c = Math.cos(ang); sn = Math.sin(ang);
+        ctx.beginPath();
+        ctx.moveTo(s.x + c * (ar - px * 0.4), s.y + sn * (ar - px * 0.4));
+        ctx.lineTo(s.x + c * (ar - px * 5.4), s.y + sn * (ar - px * 5.4));
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  };
+
+  /* A soul touching you, or over the ink budget, loses its bracket and gets a
+   * sector on YOUR ring instead: same colour, same law, at that soul's bearing.
+   * Radial position carries the rule a fourth time -- prey sits inside your
+   * ring (flame coming in), a threat outside it (flame leaving) -- so a collar
+   * reads correctly with hue knocked out entirely. */
+  Renderer.prototype._drawCollars = function (ctx, me, pr, px) {
+    var n = this._roleN, dz = deadzone();
+    for (var i = 0; i < n; i++) {
+      var it = ROLE[i];
+      if (!it.collar) continue;
+      var bear = Math.atan2(it.s.y - me.y, it.s.x - me.x);
+      var half = clamp(Math.atan2(it.s.radius(), Math.max(0.001, it.d)), 0.16, 0.42);
+      var prox = clamp(1 - it.sep / 34, 0, 1);
+      var a = 0.30 + 0.70 * prox * prox;
+      if (it.role !== 0) a *= Math.min(1, (it.gap - dz) / 4);
+      if (a <= 0.03) continue;
+      var rad = it.role === 0 ? pr : pr + (it.role === -1 ? px * 9 : -px * 9);
+      var col = it.role === 0 ? pal().idle : (it.role === 1 ? pal().prey : pal().threat);
+
+      ctx.globalAlpha = a * 0.8;
+      ctx.strokeStyle = 'rgba(7,6,13,0.9)';
+      ctx.lineWidth = px * 5.4;
+      ctx.beginPath(); ctx.arc(me.x, me.y, rad, bear - half, bear + half); ctx.stroke();
+
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = col;
+      ctx.lineWidth = px * 3.0;
+      ctx.beginPath(); ctx.arc(me.x, me.y, rad, bear - half, bear + half); ctx.stroke();
+
+      if (it.role !== 0) {
+        var dir = it.role === -1 ? 1 : -1;          // out for a threat, in for prey
+        var c = Math.cos(bear), sn = Math.sin(bear);
+        ctx.lineWidth = px * 2.6;
+        ctx.beginPath();
+        ctx.moveTo(me.x + c * (rad + dir * px * 2.4), me.y + sn * (rad + dir * px * 2.4));
+        ctx.lineTo(me.x + c * (rad + dir * px * 6.4), me.y + sn * (rad + dir * px * 6.4));
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  };
+
   Renderer.prototype._drawSouls = function (ctx, game, S, t) {
+    var me = game.player && game.player.alive ? game.player : null;
+    // Who is what to you, decided once per frame and reused by the brackets,
+    // the collars and the verdict number.
+    this._gatherRoles(game);
+
     ctx.save();
     ctx.translate(this.ox, this.oy);
     ctx.scale(S, S);
 
-    // Draw dim souls first so bright ones (the targets) sit on top.
+    // Dim first so bright ones sit on top -- but never the player, who is drawn
+    // last of all. Sorted by flame the player landed at index 2 of 11 in a
+    // measured endgame, with eight brighter souls painting over their own ring.
     var order = game.souls.slice().sort(function (a, b) { return a.flame - b.flame; });
-
     for (var i = 0; i < order.length; i++) {
       var s = order[i];
-      if (!s.alive) continue;
-      var r = s.radius();
-      var col = s.color();
-      var f01 = s.flame / 100;
-
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      // Bloom scales hard with flame: a full soul is a lighthouse announcing
-      // itself to every hungry thing in the arena.
-      J.drawGlow(ctx, s.x, s.y, r * (2.6 + f01 * 3.4), col, 0.42 + f01 * 0.4);
-      ctx.restore();
-
-      // Body
-      ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, TAU);
-      ctx.fillStyle = col; ctx.fill();
-
-      // Hot core
-      ctx.beginPath(); ctx.arc(s.x - r * 0.16, s.y - r * 0.18, r * (0.3 + f01 * 0.26), 0, TAU);
-      ctx.fillStyle = 'rgba(255,255,255,' + (0.4 + f01 * 0.5).toFixed(2) + ')';
-      ctx.fill();
-
-      // Hit flash
-      if (s.flash > 0) {
-        ctx.beginPath(); ctx.arc(s.x, s.y, r * (1 + (1 - s.flash) * 0.9), 0, TAU);
-        ctx.strokeStyle = 'rgba(255,255,255,' + (s.flash * 0.8).toFixed(2) + ')';
-        ctx.lineWidth = 0.7; ctx.stroke();
-      }
-
-      if (s.isPlayer) {
-        // A cyan ring + chevron so "you" is unmistakable without relying on hue.
-        var pr = r + 2.2 + Math.sin(t * 4) * 0.35;
-        ctx.beginPath(); ctx.arc(s.x, s.y, pr, 0, TAU);
-        ctx.strokeStyle = '#00f5d4';
-        ctx.lineWidth = this.contrast ? 1.5 : 0.75;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(s.x - 2.1, s.y - pr - 2.4);
-        ctx.lineTo(s.x, s.y - pr - 0.5);
-        ctx.lineTo(s.x + 2.1, s.y - pr - 2.4);
-        ctx.closePath();
-        ctx.fillStyle = '#00f5d4'; ctx.fill();
-      } else if (this.showNames && this._hasRoom(game, s)) {
-        // These are people the player has met, so they have to be readable:
-        // brighter, outlined against the glow, and clear of the body.
-        var ly = s.y - r - 2.2;
-        ctx.font = '700 2.6px ui-monospace, Menlo, monospace';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-        ctx.lineWidth = 0.9;
-        ctx.strokeStyle = 'rgba(4,3,9,.85)';
-        ctx.strokeText(s.name, s.x, ly);
-        ctx.fillStyle = this.contrast ? 'rgba(238,236,250,.95)' : 'rgba(206,200,232,.72)';
-        ctx.fillText(s.name, s.x, ly);
-      }
+      if (!s.alive || s.offBoard || s.isPlayer) continue;
+      this._drawSoul(ctx, game, s, t);
     }
+    ctx.restore();
+
+    // Marks over the bodies, then you over the marks.
+    this._drawRoles(ctx, game, S, t);
+    if (me) this._drawPlayer(ctx, game, me, S, t);
+  };
+
+  Renderer.prototype._drawSoul = function (ctx, game, s, t) {
+    var r = s.radius();
+    var col = s.color();
+    var f01 = s.flame / 100;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    // Bloom scales hard with flame: a full soul is a lighthouse announcing
+    // itself to every hungry thing in the arena.
+    J.drawGlow(ctx, s.x, s.y, r * (2.6 + f01 * 3.4), col, 0.42 + f01 * 0.4);
+    ctx.restore();
+
+    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, TAU);
+    ctx.fillStyle = col; ctx.fill();
+
+    // Hot core
+    ctx.beginPath(); ctx.arc(s.x - r * 0.16, s.y - r * 0.18, r * (0.3 + f01 * 0.26), 0, TAU);
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.4 + f01 * 0.5).toFixed(2) + ')';
+    ctx.fill();
+
+    if (s.flash > 0) {
+      ctx.beginPath(); ctx.arc(s.x, s.y, r * (1 + (1 - s.flash) * 0.9), 0, TAU);
+      ctx.strokeStyle = 'rgba(255,255,255,' + (s.flash * 0.8).toFixed(2) + ')';
+      ctx.lineWidth = 0.7; ctx.stroke();
+    }
+
+    if (this.showNames && this._hasRoom(game, s)) {
+      // These are people the player has met, so they have to be readable:
+      // brighter, outlined against the glow, and clear of the body.
+      var ly = s.y - r - 2.2;
+      ctx.font = '700 2.6px ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 0.9;
+      ctx.strokeStyle = 'rgba(4,3,9,.85)';
+      ctx.strokeText(s.name, s.x, ly);
+      ctx.fillStyle = this.contrast ? 'rgba(238,236,250,.95)' : 'rgba(206,200,232,.72)';
+      ctx.fillText(s.name, s.x, ly);
+    }
+  };
+
+  /* You, on top of everything, at a constant weight on screen. Every dimension
+   * is CSS px over the world scale: the ring used to stroke at 6.3px at endgame
+   * zoom and 1px at the open, so the one mark that has to be findable changed
+   * size whenever the camera moved. */
+  Renderer.prototype._drawPlayer = function (ctx, game, me, S, t) {
+    var px = 1 / S;
+    var r = me.radius();
+    var col = me.color();
+    var f01 = me.flame / 100;
+    var pr = r + px * 13 + Math.sin(t * 4) * px * 1.0;
+
+    ctx.save();
+    ctx.translate(this.ox, this.oy);
+    ctx.scale(S, S);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    J.drawGlow(ctx, me.x, me.y, r * (2.6 + f01 * 3.4), col, 0.42 + f01 * 0.4);
+    J.drawGlow(ctx, me.x, me.y, pr * 2.0, pal().you, 0.20);
+    ctx.restore();
+
+    ctx.lineCap = 'round';
+    this._drawCollars(ctx, me, pr, px);
+
+    // Body and core
+    ctx.beginPath(); ctx.arc(me.x, me.y, r, 0, TAU);
+    ctx.fillStyle = col; ctx.fill();
+    ctx.beginPath(); ctx.arc(me.x - r * 0.16, me.y - r * 0.18, r * (0.3 + f01 * 0.26), 0, TAU);
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.4 + f01 * 0.5).toFixed(2) + ')';
+    ctx.fill();
+    if (me.flash > 0) {
+      ctx.beginPath(); ctx.arc(me.x, me.y, r * (1 + (1 - me.flash) * 0.9), 0, TAU);
+      ctx.strokeStyle = 'rgba(255,255,255,' + (me.flash * 0.8).toFixed(2) + ')';
+      ctx.lineWidth = 0.7; ctx.stroke();
+    }
+
+    // The moat is what makes "you" findable inside eleven overlapping blooms —
+    // and it is the only thing that works for a deuteranope, for whom the teal
+    // and a flame-100 body are far enough apart to tell apart but not to find.
+    ctx.beginPath(); ctx.arc(me.x, me.y, pr, 0, TAU);
+    ctx.strokeStyle = 'rgba(7,6,13,0.82)';
+    ctx.lineWidth = px * 6; ctx.stroke();
+
+    ctx.beginPath(); ctx.arc(me.x, me.y, pr, 0, TAU);
+    ctx.strokeStyle = pal().you;
+    ctx.lineWidth = px * (this.contrast ? 3.4 : 2.2); ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(me.x - px * 8, me.y - pr - px * 13);
+    ctx.lineTo(me.x, me.y - pr - px * 5);
+    ctx.lineTo(me.x + px * 8, me.y - pr - px * 13);
+    ctx.closePath();
+    ctx.fillStyle = pal().you; ctx.fill();
+
+    ctx.restore();
+
+    // The exchange, in screen space so it never changes size: what this contact
+    // is actually worth. Winning a steal pays 0.66x and losing one costs 1.0x,
+    // and nothing in the game has ever said so.
+    this._drawVerdict(ctx, me, S, t);
+  };
+
+  Renderer.prototype._drawVerdict = function (ctx, me, S) {
+    var G = global.Game;
+    if (!G || this._roleN === 0) return;
+    var it = null;
+    for (var i = 0; i < this._roleN; i++) {
+      if (ROLE[i].role !== 0 && ROLE[i].sep < 7) { it = ROLE[i]; break; }
+    }
+    if (!it) return;
+    var K = G.K;
+    var amt = clamp(it.gap * K.STEAL_RATIO, K.STEAL_MIN, K.STEAL_MAX);
+    var txt = it.role === 1 ? '+' + Math.round(amt * K.STEAL_KEEP)
+                            : '−' + Math.round(amt);
+    // Away from the soul in question, so the number never covers it.
+    var bear = Math.atan2(me.y - it.s.y, me.x - it.s.x);
+    var pr = (me.radius() + 13 / S) * S + 26;
+    var x = this.toScreenX(me.x) + Math.cos(bear) * pr;
+    var y = this.toScreenY(me.y) + Math.sin(bear) * pr;
+    ctx.save();
+    ctx.font = '700 15px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(4,3,9,.9)';
+    ctx.strokeText(txt, x, y);
+    ctx.fillStyle = it.role === 1 ? pal().prey : pal().threat;
+    ctx.fillText(txt, x, y);
     ctx.restore();
   };
 
   /** True when no other living soul is close enough for the labels to collide. */
   Renderer.prototype._hasRoom = function (game, s) {
+    // The HUD owns the top of the screen; a name drawn into it collides with
+    // the soul count, the pips and the phase label.
+    if (this.toScreenY(s.y - s.radius() - 2.2) < this.topBand) return false;
     // The coach line owns its band while it is showing; a name label underneath
     // it is unreadable and makes both look like a mistake.
     if (this.coachBand) {
@@ -389,6 +694,136 @@
    * alive, steerable and invisible. Pin a marker to the edge instead of moving
    * the camera, which would fight the shake pivot and the ring's composition.
    * Sets this.marker so tests can assert it without reading pixels. */
+  /* Project a world point onto the screen border, and say whether it was
+   * already on screen. One helper, because the fuel needle, the threat needle
+   * and the offscreen player marker all need exactly this. */
+  Renderer.prototype._edgeProject = function (wx, wy, cw, ch, inset, pad) {
+    var x = this.toScreenX(wx), y = this.toScreenY(wy);
+    var on = (x > pad && x < cw - pad && y > pad && y < ch - pad);
+    var cx = cw / 2, cy = ch / 2;
+    var dx = x - cx, dy = y - cy;
+    if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return null;
+    var sx = (cw / 2 - inset) / Math.max(1e-6, Math.abs(dx));
+    var sy = (ch / 2 - inset) / Math.max(1e-6, Math.abs(dy));
+    var k = Math.min(sx, sy);
+    return { x: cx + dx * k, y: cy + dy * k, ang: Math.atan2(dy, dx), on: on };
+  };
+
+  /* THE THIRD QUESTION: where is the fuel?
+   *
+   * Nothing in the game answered it. Embers are small, the camera zooms to
+   * 2.15x, and the ring moves them off screen constantly, so "run into the
+   * spikes" was advice you could follow only if the spikes happened to be in
+   * frame. A needle on the border points at the nearest ARMED ember whenever
+   * none is visible; when the fuel runs out for good it points at the nearest
+   * prey instead, which is the phase change stated as a direction rather than
+   * as a toast.
+   *
+   * At most two markers ever draw, and each is a dozen path ops -- this is not
+   * where the frame budget goes.
+   */
+  Renderer.prototype._drawEdgeMarkers = function (ctx, game, cw, ch, t) {
+    var p = game.player;
+    if (!p || !p.alive || game.state === 'countdown') return;
+    var INSET = 26, PAD = 0;
+
+    // --- fuel (or, once it is gone, the nearest meal that walks) ---
+    var target = game.fuelGone ? null : game.nearestFuel();
+    var isPrey = false;
+    if (!target) { target = game.nearestPrey(); isPrey = !!target; }
+    if (target) {
+      var e = this._edgeProject(target.x, target.y, cw, ch, INSET, PAD);
+      // Only when it is genuinely off screen: an arrow pointing at something
+      // the player can already see is noise that teaches them to ignore arrows.
+      if (e && !e.on) {
+        var d = Math.hypot(target.x - p.x, target.y - p.y);
+        var a = 0.6 + 0.35 * clamp(1 - d / 70, 0, 1);
+        this._needle(ctx, e, isPrey ? pal().prey : pal().ember, a, isPrey, t);
+      }
+    }
+
+    // --- the nearest thing that can rob you, when it is coming from off screen ---
+    var nearest = null, nd = Infinity;
+    for (var i = 0; i < game.souls.length; i++) {
+      var s = game.souls[i];
+      if (!s.alive || s.isPlayer || s.offBoard) continue;
+      if (p.flame - s.flame <= deadzone()) continue;
+      var dd = Math.hypot(s.x - p.x, s.y - p.y);
+      if (dd < nd) { nd = dd; nearest = s; }
+    }
+    if (nearest && nd < 42) {
+      var te = this._edgeProject(nearest.x, nearest.y, cw, ch, INSET, PAD);
+      if (te && !te.on) {
+        var near = clamp(1 - nd / 42, 0, 1);
+        var pulse = 0.6 + 0.4 * Math.sin(t * 7);
+        this._threatEdge(ctx, te, (0.3 + 0.55 * near) * pulse, near);
+      }
+    }
+  };
+
+  /* An arrowhead with the fuel's own spikes on it, so the marker and the thing
+   * it points at are obviously the same object. Shape, not just hue: the
+   * spiked head means "food" at 320px and in greyscale. */
+  Renderer.prototype._needle = function (ctx, e, color, alpha, hollow, t) {
+    var breathe = 1 + Math.sin(t * 3.4) * 0.08;
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    // A plate first. The border is where the ring glow and every soul's bloom
+    // pile up, and an unbacked marker there is a suggestion, not a signpost.
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.beginPath(); ctx.arc(0, 0, 15, 0, TAU);
+    ctx.fillStyle = 'rgba(7,6,13,.72)'; ctx.fill();
+    ctx.rotate(e.ang);
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    // Six points, alternating long/short: the ember star, cut in half and
+    // pointed outward.
+    for (var i = 0; i <= 6; i++) {
+      var ang = -Math.PI / 2 + (i / 6) * Math.PI;
+      var rad = (i % 2 === 0 ? 6.2 : 12.0) * breathe;
+      var px = Math.cos(ang) * rad + 3, py = Math.sin(ang) * rad;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.lineTo(-9, 0);
+    ctx.closePath();
+    if (hollow) {
+      // Prey is a live lamp, not a pickup: outline it so the two never merge.
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+    } else {
+      ctx.fillStyle = color; ctx.fill();
+    }
+    ctx.restore();
+  };
+
+  /* A threat off screen gets a wall, not an arrow: a thick arc lying along the
+   * border with its spikes pointing IN at you -- the same outward-spike grammar
+   * the threat rings use, seen from the other side. */
+  Renderer.prototype._threatEdge = function (ctx, e, alpha, near) {
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    ctx.rotate(e.ang);
+    ctx.globalAlpha = clamp(alpha, 0, 1) * 0.75;
+    ctx.beginPath(); ctx.arc(-6, 0, 16, -1.0, 1.0);
+    ctx.lineTo(-6, 0); ctx.closePath();
+    ctx.fillStyle = 'rgba(7,6,13,.7)'; ctx.fill();
+    ctx.globalAlpha = clamp(alpha, 0, 1);
+    ctx.strokeStyle = pal().threat;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(-9, 0, 15, -0.85, 0.85);
+    ctx.stroke();
+    ctx.lineWidth = 1.8;
+    for (var i = -1; i <= 1; i++) {
+      var a = i * 0.52;
+      var c = Math.cos(a), s2 = Math.sin(a);
+      ctx.beginPath();
+      ctx.moveTo(-9 + c * 13, s2 * 13);
+      ctx.lineTo(-9 + c * (7 - 3 * near), s2 * (7 - 3 * near));
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+
   Renderer.prototype._drawOffscreenPlayer = function (ctx, game, cw, ch, t) {
     this.marker = null;
     var p = game.player;
@@ -423,7 +858,7 @@
     ctx.moveTo(9, 0); ctx.lineTo(-6, -7); ctx.lineTo(-6, 7);
     ctx.closePath();
     ctx.fillStyle = col; ctx.fill();
-    ctx.strokeStyle = '#00f5d4'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.strokeStyle = pal().you; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.restore();
   };
 

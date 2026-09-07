@@ -16,9 +16,18 @@ const LAUNCH = {
   args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
 };
 
-async function newPage(browser, opts) {
-  const ctx = await browser.newContext(Object.assign({}, opts));
+/** A returning player: the lesson is behind them, so PLAY means play.
+ *  Pass {teach: true} to get a fresh profile that still has the lesson to do. */
+async function newPage(browser, opts, teach) {
+  // Service workers off: the shipped SW is cache-first, so leaving it on means
+  // a run can silently test the previous revision's files instead of these.
+  const ctx = await browser.newContext(Object.assign({ serviceWorkers: 'block' }, opts));
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE.replace(/\/$/, '') });
+  if (!teach) {
+    await ctx.addInitScript(() => {
+      try { localStorage.setItem('lod.tutorialDone', 'true'); } catch (e) {}
+    });
+  }
   const page = await ctx.newPage();
   page.errors = [];
   page.on('console', m => { if (m.type() === 'error') page.errors.push(m.text()); });
@@ -393,7 +402,220 @@ async function playTo(page, force) {
     await page.context().close();
   }
 
-  /* ---------- 8. frame pacing ---------- */
+  /* ---------- 8. the lesson ---------- */
+  console.log('\nTHE LESSON');
+  {
+    const page = await newPage(browser,
+      Object.assign({}, devices['iPhone 12'], { hasTouch: true, isMobile: true }), true);
+    await page.goto(BASE, { waitUntil: 'networkidle' });
+
+    const label = await page.textContent('#btn-play');
+    ok('a first-timer is offered the lesson, not a match', /LEARN/.test(label), label);
+
+    await page.click('#btn-play');
+    await page.waitForSelector('#tut.show', { timeout: 8000 });
+    const open = await page.evaluate(() => ({
+      souls: window.__g.souls.length,
+      hold: window.__g.holdRing, noSpawn: window.__g.noSpawn, floor: window.__g.floor,
+      dots: document.querySelectorAll('#tut-dots i').length,
+      ringHold: window.__g.ringHoldR,
+      on: document.querySelectorAll('#tut-dots i.on').length,
+      pips: document.querySelectorAll('#pips .pip').length,
+      teaching: document.getElementById('hud').classList.contains('teaching'),
+      letgo: getComputedStyle(document.querySelector('.letgo')).pointerEvents,
+      line: document.getElementById('tut-line').innerText,
+      embers: window.__g.embers.length
+    }));
+    await page.screenshot({ path: OUT + '/70-lesson-move.png' });
+    ok('the lesson runs a three-lamp arena', open.souls === 3, JSON.stringify(open));
+    ok('with the light held and no fuel spawning', open.hold && open.noSpawn && open.floor > 0);
+    ok('pips match the field, not the constant', open.pips === 3, open.pips);
+    ok('progress dots appear, one lit', open.dots === 5 && open.on === 1, JSON.stringify(open));
+    ok('the light is held close so the marks are big enough to read',
+      open.ringHold > 0 && open.ringHold <= 34, open.ringHold);
+    ok('LET GO is not on offer mid-lesson', open.teaching && open.letgo === 'none', open.letgo);
+    ok('beat one asks the player to move', /DRAG/.test(open.line), open.line);
+
+    // Beat 1: actually drag.
+    const box = await page.locator('#stage').boundingBox();
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy); await page.mouse.down();
+    for (let i = 0; i < 24; i++) {
+      await page.mouse.move(cx + Math.cos(i / 3) * 40, cy + Math.sin(i / 3) * 40);
+      await page.waitForTimeout(40);
+    }
+    await page.mouse.up();
+    await page.waitForFunction(() => /FUEL/.test(document.getElementById('tut-line').innerText),
+      null, { timeout: 8000 });
+    const eatBeat = await page.evaluate(() => ({ embers: window.__g.embers.length }));
+    await page.screenshot({ path: OUT + '/71-lesson-eat.png' });
+    ok('moving advances the lesson', true);
+    ok('beat two puts exactly one ember down by hand', eatBeat.embers === 1, JSON.stringify(eatBeat));
+
+    // Beat 2: walk onto it.
+    await page.evaluate(() => {
+      const g = window.__g, e = g.embers[0];
+      e.arm = 0; g.player.x = e.x; g.player.y = e.y;
+    });
+    await page.waitForFunction(() => /BURN RATE/.test(document.getElementById('tut-line').innerText),
+      null, { timeout: 8000 });
+    ok('eating is acknowledged by the lesson, and names the cost', true);
+
+    // Beat 3: the dashed ring.
+    await page.waitForFunction(() => /DASHED/.test(document.getElementById('tut-line').innerText),
+      null, { timeout: 10000 });
+    const preyBeat = await page.evaluate(() => {
+      const g = window.__g, p = g.player;
+      const rivals = g.souls.filter(s => !s.isPlayer);
+      // The gap is derived from the player, never a constant, so assert the
+      // gap -- not an absolute flame that a well-fed player would blow past.
+      return { top: Math.max.apply(null, rivals.map(s => s.flame)), you: p.flame,
+               neutral: rivals.some(s => Math.abs(s.flame - p.flame) <= Game.K.STEAL_MIN_DIFF) };
+    });
+    await page.screenshot({ path: OUT + '/72-lesson-prey.png' });
+    ok('a visibly brighter lamp is staged for the prey beat',
+      preyBeat.top - preyBeat.you > 24, JSON.stringify(preyBeat));
+    ok('and a neutral one beside it, so the contrast is on screen',
+      preyBeat.neutral, JSON.stringify(preyBeat));
+
+    await page.evaluate(() => {
+      const g = window.__g, p = g.player;
+      const target = g.souls.filter(s => !s.isPlayer).sort((a, b) => b.flame - a.flame)[0];
+      p.x = target.x; p.y = target.y + 0.5;
+    });
+    await page.waitForFunction(() => /SPILLED/.test(document.getElementById('tut-line').innerText),
+      null, { timeout: 8000 });
+    ok('taking is acknowledged, and the spill is named', true);
+
+    // Beat 4: the lesson walks a dimmer lamp into the player, so something
+    // actually happens rather than a clock running under a caption. The copy
+    // names shapes, never colours, so this matches SOLID.
+    await page.waitForFunction(() => /BRIGHT ONE/.test(document.getElementById('tut-line').innerText),
+      null, { timeout: 12000 });
+    const threatBeat = await page.evaluate(() => {
+      const g = window.__g, rc = g.roleCounts();
+      return { you: g.player.flame, prey: rc.prey, threat: rc.threat };
+    });
+    await page.screenshot({ path: OUT + '/73-lesson-threat.png' });
+    ok('the player really is the bright one by the threat beat',
+      threatBeat.threat >= 1 && threatBeat.prey === 0, JSON.stringify(threatBeat));
+    await page.waitForFunction(() => /SOLID/.test(document.getElementById('tut-line').innerText),
+      null, { timeout: 14000 });
+    ok('and the lamp really robs them -- the beat is an event, not a timer',
+      await page.evaluate(() => window.__g.player.robbed > 0));
+    ok('the success line quotes what it actually took',
+      /IT JUST TOOK \d+/.test(await page.textContent('#tut-line')),
+      await page.textContent('#tut-line'));
+
+    // Nothing in the lesson can kill you.
+    ok('the player is still burning', await page.evaluate(() => window.__g.player.alive));
+
+    // The lesson hands off to a real night, and never runs again.
+    await page.waitForFunction(() => window.__g && window.__g.souls.length > 3,
+      null, { timeout: 25000 });
+    const after = await page.evaluate(() => ({
+      souls: window.__g.souls.length,
+      pips: document.querySelectorAll('#pips .pip').length,
+      tut: document.getElementById('tut').classList.contains('show'),
+      teaching: document.getElementById('hud').classList.contains('teaching'),
+      done: JSON.parse(localStorage.getItem('lod.tutorialDone') || 'false')
+    }));
+    await page.screenshot({ path: OUT + '/74-lesson-handoff.png' });
+    ok('the lesson hands off to a full twelve-lamp night', after.souls === 12, JSON.stringify(after));
+    ok('pips rebuild for the real field', after.pips === 12, after.pips);
+    ok('the lesson layer gets out of the way', !after.tut && !after.teaching);
+    ok('and it is marked done for next time', after.done === true);
+    ok('no console errors', page.errors.length === 0, page.errors[0]);
+    await page.context().close();
+  }
+
+  /* ---------- 9. the role readout ---------- */
+  console.log('\nROLE READOUT');
+  {
+    const page = await newPage(browser,
+      Object.assign({}, devices['iPhone 12'], { hasTouch: true, isMobile: true }));
+    await page.goto(BASE, { waitUntil: 'networkidle' });
+    await playTo(page);
+    const read = () => page.evaluate(() => {
+      const marks = [...document.querySelectorAll('#flamebar-marks i')]
+        .filter(el => !el.hidden)
+        .map(el => ({ cls: el.className, x: parseFloat((el.style.transform.match(/-?[\d.]+/) || [0])[0]) }));
+      return {
+        prey: document.querySelector('#tally-prey b').textContent,
+        threat: document.querySelector('#tally-threat b').textContent,
+        preyZero: document.getElementById('tally-prey').classList.contains('zero'),
+        threatZero: document.getElementById('tally-threat').classList.contains('zero'),
+        over: document.getElementById('flamebar').classList.contains('over'),
+        life: document.getElementById('hud-life').textContent,
+        marks: marks,
+        fillPx: document.getElementById('flamebar-fill').getBoundingClientRect().width,
+        barPx: document.getElementById('flamebar').clientWidth
+      };
+    });
+
+    await page.evaluate(() => { window.__g.player.flame = 100; });
+    await page.waitForTimeout(250);
+    const bright = await read();
+    await page.screenshot({ path: OUT + '/75-hud-bright.png' });
+    ok('the brightest lamp has nothing to take', bright.prey === '0' && bright.preyZero, JSON.stringify(bright.prey));
+    ok('and the whole field is hunting it', Number(bright.threat) > 0 && !bright.threatZero, bright.threat);
+    ok('the bar flags that you are the meal', bright.over);
+    ok('every rival is plotted on your own bar',
+      bright.marks.length === 11, bright.marks.length + ' marks');
+    ok('and at flame 100 every mark sits behind your fill',
+      bright.marks.every(m => m.x <= bright.fillPx + 1),
+      JSON.stringify(bright.marks.slice(0, 3)) + ' fill=' + bright.fillPx.toFixed(1));
+
+    await page.evaluate(() => { window.__g.player.flame = 2; });
+    await page.waitForTimeout(250);
+    const dim = await read();
+    await page.screenshot({ path: OUT + '/76-hud-dim.png' });
+    ok('the dimmest lamp is hunted by nobody', dim.threat === '0' && dim.threatZero, dim.threat);
+    ok('and everything on the field is food', Number(dim.prey) > 0, dim.prey);
+    ok('the bar stops flagging you', !dim.over);
+    ok('at flame 2 every mark sits on the empty track ahead',
+      dim.marks.length === 11 && dim.marks.every(m => m.x >= dim.fillPx - 1),
+      JSON.stringify(dim.marks.slice(0, 3)) + ' fill=' + dim.fillPx.toFixed(1));
+    ok('marks are coloured by role, not by flame',
+      dim.marks.every(m => m.cls === 'prey') && bright.marks.every(m => m.cls === 'threat'),
+      JSON.stringify(dim.marks.map(m => m.cls)));
+
+    // "How long have I got" has to be a number, and it has to move the right way.
+    const life = await page.evaluate(() => {
+      const g = window.__g, out = {};
+      g.player.flame = 20; out.dim = g.playerSecondsLeft();
+      g.player.flame = 80; out.bright = g.playerSecondsLeft();
+      return out;
+    });
+    ok('more flame is more time', life.bright > life.dim, JSON.stringify(life));
+    ok('but not proportionally more — the rate climbs with it',
+      life.bright < life.dim * 4, JSON.stringify(life));
+    await page.waitForTimeout(250);
+    ok('the HUD shows it as seconds', /^[\d.]+s$/.test((await read()).life), (await read()).life);
+
+    // The two numbers must equal what the arena actually draws rings around.
+    const agree = await page.evaluate(() => {
+      const g = window.__g, p = g.player, out = [];
+      for (const f of [10, 30, 50, 75, 95]) {
+        p.flame = f;
+        const rc = g.roleCounts();
+        let prey = 0, threat = 0;
+        for (const s of g.souls) {
+          if (!s.alive || s.isPlayer || s.offBoard) continue;
+          const d = s.flame - p.flame;
+          if (d > Game.K.STEAL_MIN_DIFF) prey++;
+          else if (d < -Game.K.STEAL_MIN_DIFF) threat++;
+        }
+        out.push(rc.prey === prey && rc.threat === threat && rc.marks.length === (g.aliveCount - 1) * 2);
+      }
+      return out.every(Boolean);
+    });
+    ok('the tallies, the marks and the rings never disagree', agree);
+    ok('no console errors', page.errors.length === 0, page.errors[0]);
+    await page.context().close();
+  }
+
+  /* ---------- 10. frame pacing ---------- */
   console.log('\nFRAME PACING');
   {
     const page = await newPage(browser, Object.assign({}, devices['iPhone 12'], { hasTouch: true, isMobile: true }));
@@ -417,15 +639,21 @@ async function playTo(page, force) {
         for (let i = 0; i < 30; i++) window.__r.draw(window.__g, null, performance.now() / 1000);
         return (performance.now() - t) / 30; })()
     }));
-    console.log('    adaptive quality settled at ' + q.quality + ' (' + q.backing + '), draw ' + q.draw.toFixed(1) + 'ms');
-    // Under swiftshader the renderer genuinely cannot hold 60fps at full res, so
-    // the ladder must engage. On real hardware it stays at 1.
-    ok('adaptive resolution engages when the GPU cannot keep up', q.quality < 1, 'quality=' + q.quality);
-    ok('and it stops stepping down once draw is affordable', q.draw < 16, q.draw.toFixed(1) + 'ms');
     const f = await page.evaluate(() => window.__frames.slice(5));
     const sorted = f.slice().sort((a, b) => a - b);
     const p50 = sorted[sorted.length >> 1], p95 = sorted[Math.floor(sorted.length * 0.95)];
+    const engaged = q.quality < 1;
+    console.log('    adaptive quality settled at ' + q.quality + ' (' + q.backing + '), draw ' + q.draw.toFixed(1) + 'ms');
     console.log('    median frame ' + p50.toFixed(1) + 'ms, p95 ' + p95.toFixed(1) + 'ms (software GL)');
+    // How hard swiftshader has to work varies with what else is on this box, so
+    // "the ladder stepped down" is not the invariant — "the device ends up
+    // drawing something it can afford" is. Both branches are checked; which one
+    // runs is a property of the machine, not of the code.
+    ok('resolution ends up affordable to draw', q.draw < 16, q.draw.toFixed(1) + 'ms');
+    ok(engaged ? 'the ladder engaged, and stopped once draw was affordable'
+              : 'the ladder stayed at full res because the pace did not call for it',
+      engaged ? q.draw < 16 : p50 < 21,
+      'quality=' + q.quality + ' p50=' + p50.toFixed(1));
     ok('frames are produced steadily', f.length > 100 && p50 < 60, 'p50=' + p50.toFixed(1));
     ok('no console errors during play', page.errors.length === 0, page.errors[0]);
     await page.context().close();

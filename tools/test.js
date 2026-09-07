@@ -287,5 +287,232 @@ console.log('\nDAILY SEED');
   ok('day number increments by one', RNG.dayNumber(d2) === RNG.dayNumber(d1) + 1);
 }
 
+console.log('\nROLE READOUT');
+{
+  // What the HUD tallies say has to be exactly what the arena draws rings for.
+  const g = new Game({ seed: 'roles', mode: 'endless' });
+  g.reduced = true; g.startPlay();
+  const p = g.player;
+  function manual() {
+    let prey = 0, threat = 0;
+    for (const s of g.souls) {
+      if (!s.alive || s.isPlayer) continue;
+      const d = s.flame - p.flame;
+      if (d > Game.K.STEAL_MIN_DIFF) prey++;
+      else if (d < -Game.K.STEAL_MIN_DIFF) threat++;
+    }
+    return prey + '/' + threat;
+  }
+  let agreed = true, sawBoth = false;
+  for (const f of [8, 24, 40, 55, 70, 92]) {
+    p.flame = f;
+    const rc = g.roleCounts();
+    if (rc.prey + '/' + rc.threat !== manual()) agreed = false;
+    if (rc.prey > 0 && rc.threat > 0) sawBoth = true;
+  }
+  ok('roleCounts matches the drawing rule at every brightness', agreed);
+  ok('both roles occur in one field', sawBoth);
+  p.flame = 100;
+  ok('brightest lamp -> nothing to take, everything hunts you',
+    g.roleCounts().prey === 0 && g.roleCounts().threat > 0);
+  p.flame = 0.5;
+  ok('dimmest lamp -> nothing hunts you, everything is food',
+    g.roleCounts().threat === 0 && g.roleCounts().prey > 0);
+  p.flame = 50;
+  ok('the tick is the brightest rival, never the player',
+    Math.abs(g.roleCounts().top - Math.max(...g.souls.filter(s => !s.isPlayer && s.alive).map(s => s.flame))) < 1e-9);
+  p.alive = false;
+  var dead = g.roleCounts();
+  ok('a lamp that is out has no roles',
+    dead.prey === 0 && dead.threat === 0 && dead.top === 0 && dead.marks.length === 0);
+}
+
+console.log('\nBURNS OUT IN');
+{
+  /* The HUD's headline number is a promise: "you have N seconds". It is not
+   * flame / burn-rate -- drain is proportional to flame, so the rate falls as
+   * you dim and the naive quotient was 51% pessimistic. This holds the closed
+   * form honest against the simulation it is predicting. */
+  let worst = 0, rows = [];
+  for (const [t0, f0] of [[0, 100], [0, 40], [0, 12], [20, 55], [40, 8], [80, 15], [100, 45]]) {
+    const g = new Game({ seed: 'life', mode: 'daily' });
+    g.startPlay();
+    g.noSpawn = true;
+    g.souls.forEach(s => { if (!s.isPlayer) s.alive = false; });
+    const keep = g.souls[1];
+    g.t = t0; g.aliveCount = 2; g._soloRate = 0;
+    const p = g.player;
+    p.flame = f0; p.x = 50; p.y = g.worldH / 2;
+    const predicted = g.playerSecondsLeft(), start = g.t;
+    let n = 0;
+    while (p.flame > 0.001 && n++ < 60 * 900) {
+      // A partner pinned to the player's own flame sits inside the dead zone,
+      // so contact can never transfer anything, and it never goes out, so the
+      // finale's last flare never tops the player back up. What is left is
+      // pure drain -- which is exactly what the estimate models.
+      keep.alive = true; keep.flame = Math.max(1, p.flame); keep.x = 50; keep.y = g.worldH / 2;
+      p.x = 50; p.y = g.worldH / 2; g.embers.length = 0;
+      g.update(1 / 60, { x: 0, y: 0, mag: 0 });
+    }
+    const actual = g.t - start, err = Math.abs(predicted - actual) / actual;
+    worst = Math.max(worst, err);
+    rows.push('t' + t0 + '/f' + f0 + ' ' + predicted.toFixed(1) + 'v' + actual.toFixed(1));
+  }
+  ok('seconds-left is within 3% of the real time to burn out', worst < 0.03,
+    (worst * 100).toFixed(1) + '%  ' + rows.join('  '));
+
+  // Eating must always buy time, or the readout would punish the one action the
+  // game spends its whole tutorial teaching.
+  const K = Game.K, ent = 1 + 30 * K.ENTROPY_PER_SEC;
+  const life = f => f / ((K.DRAIN_BASE + K.DRAIN_K * f) * ent);
+  let mono = true;
+  for (let f = 1; f <= 100; f++) if (life(f) <= life(f - 1)) mono = false;
+  ok('a brighter lamp always outlives a dimmer one', mono);
+  // ...but by less and less, which is the whole economy.
+  ok('and each mouthful buys less than the last',
+    (life(19) - life(10)) > (life(59) - life(50)) * 2,
+    [10, 50, 90].map(f => '+9@' + f + '=' + (life(f + 9) - life(f)).toFixed(2) + 's').join(' '));
+}
+
+console.log('\nTUTORIAL ARENA');
+{
+  // The lesson has to be survivable while a first-timer reads it: nothing
+  // spawns, nothing closes in, and the player cannot be driven out.
+  const o = { seed: 'tutorial', mode: 'endless', souls: 3, holdRing: true, noSpawn: true, floor: 12 };
+  const g = new Game(o);
+  g.reduced = true;
+  eq('three lamps, not twelve', g.souls.length, 3);
+  eq('the field starts empty of fuel', g.embers.length, 0);
+  const r0 = g._ringRadius();
+  g.startPlay();
+  let minFlame = 99, killed = 0;
+  g.on = null;
+  for (let i = 0; i < 60 * 120; i++) {
+    g.update(1 / 60, null);
+    minFlame = Math.min(minFlame, g.player.flame);
+    for (const e of g.events) if (e.type === 'playerDied') killed++;
+    g.events.length = 0;
+  }
+  ok('the light never closes during the lesson', Math.abs(g._ringRadius() - r0) < 1e-9);
+  ok('no fuel ever appears', g.embers.length === 0);
+  ok('the player cannot fall through the floor', minFlame >= 12 - 1e-6, minFlame);
+  ok('the player cannot go out during the lesson', killed === 0 && g.player.alive);
+  ok('no NO FUEL LEFT alarm two minutes in', g.fuelGone === false);
+
+  // Fuel placed by hand is real fuel.
+  const g2 = new Game(o); g2.reduced = true; g2.startPlay();
+  g2.placeEmber(50, g2.worldH / 2, 0);
+  eq('placeEmber puts one ember down', g2.embers.length, 1);
+  g2.player.x = 50; g2.player.y = g2.worldH / 2;
+  for (let i = 0; i < 12; i++) g2.update(1 / 60, null);
+  ok('and it can be eaten', g2.player.eaten >= 1);
+
+  // Frozen props: staged, not simulated.
+  const g3 = new Game(o); g3.reduced = true; g3.startPlay();
+  const prop = g3.souls[1];
+  prop.frozen = true; prop.x = 50; prop.y = -80; prop.flame = 50;
+  for (let i = 0; i < 60 * 60; i++) g3.update(1 / 60, null);
+  eq('a frozen prop does not burn', prop.flame, 50);
+  ok('a frozen prop does not drift', prop.x === 50 && prop.y === -80);
+  ok('and it is still standing after a minute in the void', prop.alive);
+}
+
+console.log('\nTHE LESSON, PLAYED');
+{
+  // The whole lesson, driven by a compliant player. The point of this test is
+  // the success/failure copy: a beat whose `after` fires on timeout tells a
+  // motionless player "YOU TORE ITS FLAME OUT", and that one lie teaches them
+  // that the text on screen is decoration.
+  require('../js/tutorial.js');
+  const g = new Game(Tutorial.options());
+  g.reduced = true; g.startPlay();
+  const tut = new Tutorial.Tutorial(g);
+  const p = g.player;
+  const input = { x: 0, y: 0, mag: 0 };
+  const steer = (tx, ty) => {
+    const dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy) || 1;
+    input.x = dx / d; input.y = dy / d; input.mag = 1;
+  };
+  const lines = [];
+  let last = '', t = 0, minFlame = 99, died = 0;
+  for (let i = 0; i < 60 * 180 && !tut.finished; i++) {
+    const b = tut.beats[tut.i], id = b ? b.id : '';
+    if (id === 'move') steer(50 + Math.sin(t * 3) * 18, g.worldH / 2 + Math.cos(t * 3) * 18);
+    else if (id === 'eat') { const e = g.embers[0]; if (e) { e.arm = 0; steer(e.x, e.y); } else input.mag = 0; }
+    else if (id === 'prey') steer(g.souls[1].x, g.souls[1].y);
+    else input.mag = 0;
+    g.update(1 / 60, input);
+    for (const e of g.events) if (e.type === 'playerDied') died++;
+    g.events.length = 0;
+    tut.update(1 / 60);
+    minFlame = Math.min(minFlame, p.flame);
+    t += 1 / 60;
+    if (tut.line !== last) { last = tut.line; lines.push(tut.line); }
+  }
+  const strip = h => h.replace(/<[^>]+>/g, '');
+  const shown = lines.map(strip);
+  const fails = tut.beats.map(b => (typeof b.fail === 'string' ? strip(b.fail) : null)).filter(Boolean);
+
+  ok('the lesson finishes', tut.finished, t.toFixed(1) + 's');
+  ok('and inside a minute', t < 60, t.toFixed(1) + 's');
+  ok('every beat is reached', tut.i >= tut.total, tut.i + '/' + tut.total);
+  ok('a player who does the thing is never shown a failure line',
+    !shown.some(l => fails.includes(l)), shown.filter(l => fails.includes(l)).join(' | '));
+  ok('the player cannot go out during the lesson', died === 0 && p.alive);
+  ok('and never falls through the floor', minFlame >= 12 - 1e-6, minFlame);
+  ok('the fuel beat quotes the real ember value',
+    shown.some(l => l.indexOf('+' + Game.K.EMBER_VALUE + ' FLAME') === 0), shown.join(' | '));
+  ok('the steal beat quotes what the player actually kept',
+    shown.some(l => /^YOU TOOK \d+\./.test(l)), shown.join(' | '));
+  ok('the threat beat quotes what was actually taken',
+    shown.some(l => /IT JUST TOOK \d+/.test(l)), shown.join(' | '));
+  // The lesson names shapes, not hues, so it stays true if the palette moves
+  // and it works for a player who cannot tell amber from crimson.
+  ok('no beat names a colour',
+    !lines.some(l => /AMBER|CRIMSON|CYAN|TEAL|VIOLET|GREEN|BLUE|RED\b/i.test(strip(l))),
+    lines.map(strip).join(' | '));
+  ok('props stay on the board, so the lamp count is honest',
+    g.souls.every(s => !s.offBoard));
+
+  // A player who does NOTHING must still get through, and must be told the
+  // truth at every step.
+  const g2 = new Game(Tutorial.options());
+  g2.reduced = true; g2.startPlay();
+  const t2 = new Tutorial.Tutorial(g2);
+  const idle = { x: 0, y: 0, mag: 0 };
+  let t2s = 0, seen2 = [], last2 = '';
+  for (let i = 0; i < 60 * 240 && !t2.finished; i++) {
+    g2.update(1 / 60, idle); g2.events.length = 0; t2.update(1 / 60); t2s += 1 / 60;
+    if (t2.line !== last2) { last2 = t2.line; seen2.push(strip(t2.line)); }
+  }
+  ok('a player who does nothing still reaches the end', t2.finished, t2s.toFixed(1) + 's');
+  // Only the two beats the player has to ACT in. The threat beat happens TO a
+  // passive player on purpose -- the lesson walks the lamp in -- so "IT JUST
+  // TOOK 21" is a true report there, not a claim about something they did.
+  ok('and is never credited with something they did not do',
+    !seen2.some(l => /^YOU TOOK|^\+\d+ FLAME/.test(l)), seen2.join(' | '));
+  ok('the beats they skipped tell them what is still true',
+    seen2.some(l => /THE FUEL IS STILL THERE/.test(l)) &&
+    seen2.some(l => /IT IS BRIGHTER THAN YOU/.test(l)), seen2.join(' | '));
+  ok('they are still burning at the end', g2.player.alive);
+}
+
+console.log('\nOFFLINE CACHE');
+{
+  // The service worker is cache-first for static assets, so a script that ships
+  // in index.html but is missing from ASSETS is a file that does not exist
+  // offline -- and the game is a blank screen with a console error.
+  const fs = require('fs');
+  const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
+  const sw = fs.readFileSync(__dirname + '/../sw.js', 'utf8');
+  const inHtml = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+  const listed = (sw.match(/var ASSETS = \[([\s\S]*?)\]/) || ['', ''])[1];
+  const missing = inHtml.filter(f => listed.indexOf("'./" + f + "'") < 0);
+  ok('every script in index.html is precached by the service worker',
+    missing.length === 0, missing.join(', '));
+  ok('the stylesheet is precached too', listed.indexOf("'./css/style.css'") >= 0);
+  ok('the cache name has been bumped past v1', !/CACHE = 'last-one-dead-v1'/.test(sw));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

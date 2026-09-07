@@ -59,6 +59,111 @@ field this way — 189 units of 1165, gone, having never been light.
 So the scoreboard tells you that you were the one still burning, and the column
 beside it tells you what that cost the light.
 
+## Reading the field
+
+The first two builds were legible only if you already knew the rules. The
+measured cause was a colour collision: a soul at flame 60 sat **ΔE 6.8** from the
+ember colour in CIELAB, and **ΔE 0.0** under a protanope simulation. Food and
+rivals were, to a large fraction of players, literally the same colour.
+
+So the palette was rebuilt around one rule: **each colour means exactly one
+thing, and appears nowhere else.**
+
+Hue is grouped by **action**, not by object, because the screen only has room
+for about five categories a player can tell apart at a glance on a moving
+10-28px disc:
+
+| Colour | Meaning |
+|---|---|
+| violet ramp, `#221a52` → `#ffffff` | a lamp's flame — single hue, monotonic luminance 0.017 → 1.0 |
+| warm amber `#ffb020` / `#ffd166` | **run into this**: fuel, and any lamp brighter than you |
+| crimson `#f01d45` | **this costs you**: lamps dimmer than you, the closing light, the void |
+| teal `#00f5d4` | you, and nothing else |
+
+Grouping by object is what broke the old set: crimson was spent on fuel *and* on
+the closing ring, which left nothing warm for prey, so prey borrowed the
+player's own cyan — ΔE 0.0 from the "you" marker.
+
+Measured against every colour a lamp can take, worst case across normal,
+protanope and deuteranope vision: fuel **ΔE 78.6**, prey **59.9**, threat
+**59.2**. Teal is the exception at **ΔE 11.5** — against a lamp at flame 93 under
+deuteranopia it is close — which is exactly why "you" is never identified by hue
+alone: the player wears a double ring, a caret and a halo that no other lamp has.
+Flame itself is double-encoded as colour *and* radius, on a ramp whose CIE
+luminance climbs monotonically from L\* 13.8 to 100.0, so brightness survives
+both a small screen and colour blindness (`tools/palette.js` runs the CIELAB and
+Brettel dichromat maths against candidate ramps).
+
+On top of that, every lamp on screen is labelled with what it is to you *right
+now*:
+
+* **dashed amber ring, ticks pointing in** — brighter than you, so you can take it
+  (the same warm hue as the fuel, because it *is* fuel)
+* **solid crimson ring, spikes pointing out** — dimmer than you, so it is coming for
+  what you hold
+* **nothing** — inside the ±6 dead zone, where contact does nothing at all
+
+The rings fade with distance and ramp in across the dead zone, so a role never
+pops; the HUD counts the same two sets (`4 TAKE` / `3 RUN`) from the same
+function the renderer draws from, and a test asserts the two can never disagree.
+
+## The HUD
+
+Three questions get asked every second — *am I about to go out, is someone about
+to take from me, where is the fuel* — so the layout is an argument about where
+those answers belong. Anything asked every second lives at the thumb; the night's
+status lives at the top.
+
+**Seconds, not flame.** `flame / burn-rate` is the number a player actually wants,
+and it is the only readout that makes eating legible as a trade: swallow an ember
+and the seconds jump while the rate beside them climbs, so the diminishing return
+is watched rather than explained. Under 10s it goes amber, under 6s it goes
+crimson and doubles in size, and the number, the strip and a border around the
+whole screen blink together — one alarm, not three red things. Before this, a
+player one second from death saw a dark nub and the words `LOSING -7.3/s`.
+
+**The strip is the field, not a health bar.** 0 flame at the left, 100 at the
+right; your fill is you and every living lamp is a mark. Because contact runs
+bright → dim, the rule falls out of the geometry: marks sitting **on your fill**
+are dimmer and rob you, marks on the **empty track ahead** are brighter and are
+food, and marks inside the pale notch are in the ±6 dead zone where contact does
+nothing. Nothing had ever drawn that dead zone. The rule is position, so it
+survives colourblindness and a 320px screen without help from hue.
+
+**A needle for the fuel.** Embers are small, the camera zooms to 2.15×, and the
+ring pushes them off screen constantly — "run into the spikes" was advice you
+could take only if the spikes happened to be in frame. A spiked amber arrowhead
+rides the border and points at the nearest *armed* ember whenever none is
+visible. Once the fuel is gone for good it swings to the nearest lamp you can
+eat, which states the phase change as a direction instead of a toast.
+
+**What left.** `STILL BURNING 12` — the largest type on screen for the least
+actionable fact, saying exactly what twelve pips already said. The separate
+brightest-rival tick, now that every rival is drawn. The `NO FUEL LEFT` toast that
+fired word-for-word alongside the phase label saying the same thing. And `LET GO`
+gave up top billing: a button most players press once ever was the biggest control
+on screen.
+
+## The lesson
+
+A first-timer gets a five-beat scripted night instead of a match. It is not a
+separate mode — it is a real `Game` with the pressures switched off: three lamps,
+the light held where it starts, no fuel except what a beat puts down by hand, the
+other two lamps frozen as staged props, and a floor under the player's flame so
+nobody can lose while they are reading.
+
+1. you are the teal one — drag to move
+2. the amber spike is fuel — run into it *(and the burn rate visibly climbs)*
+3. a dashed amber ring means brighter than you — hit it *(a third of it spills)*
+4. now you are the bright one, and a solid crimson ring wants it back
+5. every lamp here runs out — be the last *(one goes out on screen)*
+
+Every beat waits for the player to actually **do** the thing, with a timeout so
+nobody can get stuck, and the whole lesson can be skipped from the HUD or replayed
+from settings. Props taken off the board are neither drawn nor counted in the HUD
+tallies, so the readout never names a rival you cannot see. Then it hands off to a
+real twelve-lamp night.
+
 ### The LET GO button
 
 There is a button in the corner, for the whole match, that ends you instantly.
@@ -136,14 +241,16 @@ code by `node tools/gen-assets.js`, so the repo ships nothing it cannot rebuild.
 | `js/share.js` | Burnline encoding, share delivery, challenge links, streaks |
 | `js/story.js` | The ledger: who you are, who you carry, everyone you have met |
 | `js/main.js` | Screens, frame loop, HUD, onboarding, the reveal |
+| `js/tutorial.js` | The five-beat first night, scripted over a real `Game` |
 
 ### Tools
 
 ```sh
-node tools/test.js            # 69 headless assertions: determinism, ranking, share encoding
-node tools/verify.js          # 62 browser checks in Chromium: win reveal, LET GO, touch, canvas, perf
+node tools/test.js            # 91 headless assertions: determinism, ranking, roles, the lesson
+node tools/verify.js          # 88 browser checks in Chromium: the lesson, HUD, touch, canvas, perf
 node tools/sim.js 200         # play 200 AI-only matches, report pacing
 node tools/tune.js 140 60     # search the pacing constants against a cost function
+node tools/palette.js         # CIELAB dE + dichromat separation for candidate ramps
 node tools/gen-assets.js      # regenerate icons and the Open Graph card
 ```
 

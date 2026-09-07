@@ -97,29 +97,63 @@
     [50, 9.5], [9999, 9.5]
   ];
 
-  /* Flame -> colour. Weighted toward the band souls actually occupy (roughly
-   * 5-60): with an evenly spread ramp everything on screen stays blue and the
-   * "you are getting dangerously bright" read never arrives. */
+  /* Flame -> colour.
+   *
+   * A SINGLE HUE, ramped by luminance, deliberately. The old ramp ran blue ->
+   * violet -> magenta -> RED -> amber -> white, which put a soul at flame 60 at
+   * deltaE 6.8 from the ember colour: a rival and a piece of food were the same
+   * colour on screen. (Measured; see tools/palette.js.)
+   *
+   * Now flame is encoded twice — luminance AND radius — and every hue outside
+   * this ramp is free to mean something else:
+   *   crimson  = fuel        (deltaE 79 from the nearest soul colour)
+   *   cyan     = you / prey  (deltaE 57)
+   *   amber    = a threat    (deltaE 60)
+   * Luminance rises monotonically from 0.017 to 1.0, so the ramp reads as an
+   * ordered scale rather than as a set of unrelated colours.
+   */
+  /* Respaced so the LUMINANCE ladder is even, not just the hue. The old stops
+   * stepped L* by 9.6 12.1 3.8 8.2 4.8 4.8 10.8 5.4 17.2 15.4 (sigma 3.86) --
+   * two lamps 10 flame apart could be dE00 3.8 from each other, which is
+   * "identical" on a moving 10px disc. These stops give sigma 1.32 and a
+   * minimum step of 5.0 (4.6 for a protanope). Top is #f0e2ff, not white:
+   * pure white is reserved for the hot core and the hit flash, the two marks
+   * that mean "something is happening right now". */
   var FLAME_RAMP = [
-    [0.00, '#2b3a8f'],
-    [0.10, '#4361ee'],
-    [0.24, '#7b2ff7'],
-    [0.40, '#c026d3'],
-    [0.55, '#ff2d55'],
-    [0.72, '#ff9f1c'],
-    [0.88, '#ffe066'],
-    [1.00, '#fff8e0']
+    [0.00, '#2a2159'],
+    [0.20, '#4a37c8'],
+    [0.40, '#7a4bee'],
+    [0.60, '#a273f6'],
+    [0.80, '#c9a6fa'],
+    [1.00, '#f0e2ff']
   ];
 
+  /* One meaning per hue, and every rule also carried by a second, non-hue
+   * channel (ring style, tick direction, position on the flame strip).
+   *
+   *   WARM AMBER  = "run into this"  -> fuel, and prey rings
+   *   CRIMSON     = "this costs you" -> threat rings, the closing light, the void
+   *   TEAL        = you, and nothing else
+   *
+   * Grouping by ACTION rather than by object is what got the palette back
+   * inside its budget: the old set spent crimson on fuel AND on the closing
+   * ring, then had nothing warm left for prey, so prey borrowed the player's
+   * own cyan (deltaE 0.0 from the "you" marker). */
   var C = {
+    prey:   '#ffd166',      // brighter than you: touching it feeds you
+    threat: '#f01d45',      // dimmer than you: touching it costs you
+    idle:   '#7f8899',      // in range, inside the dead zone: nothing happens
     void:   '#07060d',
     field:  '#150e28',
     field2: '#0b0716',
-    ring:   '#7b2ff7',
-    ringHot:'#ff2d55',
-    ember:  '#ff2d55',
-    emberIn:'#ffd0dc',
-    you:    '#00f5d4',
+    // Arena furniture, deliberately NOT violet: the old #7b2ff7 boundary was
+    // dE00 2.0 from a flame-34 lamp, so the edge of the world and a rival were
+    // the same colour. Slate is 18.0 from the nearest lamp on the ramp.
+    ring:   '#606a86',
+    ringHot:'#f01d45',      // must stay === threat: both mean "this costs you"
+    ember:  '#ffb020',
+    emberIn:'#ffd88a',
+    you:    '#12d7b4',
     text:   '#f2eefc',
     dim:    '#9a90b8'
   };
@@ -168,13 +202,17 @@
     this.kills = 0;
     this.eaten = 0;
     this.stolen = 0;
+    this.robbed = 0;             // flame torn OUT of this soul by dimmer ones
     this.gave = 0;                     // flame this soul burned as light
     this.spilt = 0;                    // flame this soul destroyed by tearing
     this.peak = K.FLAME_START;
   }
   Soul.prototype.radius = function () { return K.R_MIN + K.R_SPAN * (this.flame / K.FLAME_MAX); };
   Soul.prototype.speed = function () { return K.SPEED_MIN + K.SPEED_SPAN * (this.flame / K.FLAME_MAX); };
-  Soul.prototype.color = function () { return J.rampHex(FLAME_RAMP, this.flame / K.FLAME_MAX, 14); };
+  /* 20 buckets, not 14. rampHex quantises to round(t*n)/n, so at 14 the flames
+   * 0,10,...,100 land on buckets 0,1,3,4,6,7,8,10,11,13,14 -- the quantiser
+   * alone turned even stops back into uneven colour. At 20 it is 0,2,4,...,20. */
+  Soul.prototype.color = function () { return J.rampHex(FLAME_RAMP, this.flame / K.FLAME_MAX, 20); };
 
   function Ember(x, y, seedPhase, arm) {
     this.x = x; this.y = y;
@@ -203,7 +241,7 @@
     this.souls = [];
     this.embers = [];
     this.emberTimer = 0;
-    this.aliveCount = K.SOULS;
+    this.aliveCount = opts.souls || K.SOULS;
     this.player = null;
     this.ringR = RING[0][1];
     this.ringPrev = this.ringR;
@@ -234,6 +272,14 @@
     this.reduced = false;
     this.showNames = true;
     this.auto = !!opts.auto;        // headless balance runs drive the player with bot AI
+    // Tutorial hooks. Each one only ever removes a pressure; none of them change
+    // how the simulation resolves, so the tutorial is the real game with the
+    // clock held still.
+    this.soulCount = opts.souls || K.SOULS;
+    this.holdRing = !!opts.holdRing;    // the light stays where it is
+    this.ringHoldR = opts.ringHoldR || 0;  // ...at this radius; the lesson animates it
+    this.noSpawn = !!opts.noSpawn;      // fuel is placed by hand, not by the arena
+    this.floor = opts.floor || 0;       // the player cannot be driven below this flame
 
     this._build();
   }
@@ -249,10 +295,10 @@
     // Souls start evenly spaced on a circle so nobody is born with an edge,
     // with a small seeded jitter so the daily still feels hand-dealt.
     var a0 = rng.angle();
-    for (var i = 0; i < K.SOULS; i++) {
+    for (var i = 0; i < this.soulCount; i++) {
       var isPlayer = (i === 0);
       var s = new Soul(i, isPlayer ? 'YOU' : names[i - 1] || ('SOUL' + i), isPlayer);
-      var a = a0 + (i / K.SOULS) * Math.PI * 2 + rng.range(-0.06, 0.06);
+      var a = a0 + (i / this.soulCount) * Math.PI * 2 + rng.range(-0.06, 0.06);
       var rad = 0.63 + rng.range(-0.05, 0.05);           // fraction of the ring
       s.x = cx + Math.cos(a) * rad * this.ringR;
       s.y = cy + Math.sin(a) * rad * this.ringR * K.ELLIPSE_Y;
@@ -270,7 +316,7 @@
     }
 
     for (var i2 = 0; i2 < this.souls.length; i2++) this.startFlame += this.souls[i2].flame;
-    for (var e = 0; e < K.EMBER_LIVE; e++) this._spawnEmber(true);
+    if (!this.noSpawn) { for (var e = 0; e < K.EMBER_LIVE; e++) this._spawnEmber(true); }
   };
 
   /* Normalised distance from the centre of the light: <=1 is inside, whatever
@@ -284,6 +330,7 @@
   Game.prototype.ringRY = function () { return this.ringR * K.ELLIPSE_Y; };
 
   Game.prototype._ringRadius = function (t) {
+    if (this.holdRing) return this.ringHoldR || RING[0][1];
     for (var i = 1; i < RING.length; i++) {
       if (t <= RING[i][0]) {
         var a = RING[i - 1], b = RING[i];
@@ -323,7 +370,16 @@
     return null;
   };
 
+  /** Put fuel at a chosen spot — used by the tutorial to stage a lesson. */
+  Game.prototype.placeEmber = function (x, y, arm) {
+    var em = new Ember(x, y, this.rng.angle(), arm === undefined ? K.EMBER_ARM : arm);
+    em.born = this.t;
+    this.embers.push(em);
+    return em;
+  };
+
   Game.prototype._emberQuota = function () {
+    if (this.noSpawn) return 0;
     // No fuel for a soul with nobody left to fight over it — otherwise the
     // arena keeps topping up the winner and the final burnout never lands.
     if (this.aliveCount <= 1) return 0;
@@ -391,7 +447,9 @@
     this.ringPrev = target;
     this.ringR = target;
 
-    if (!this.fuelGone && this.t >= K.FUEL_CUTOFF) {
+    // The lesson places its own fuel, so it never reaches a fuel cutoff — and a
+    // "NO FUEL LEFT" alarm 40 seconds into a tutorial is a bug wearing a toast.
+    if (!this.fuelGone && !this.noSpawn && this.t >= K.FUEL_CUTOFF) {
       this.fuelGone = true;
       for (var i = 0; i < this.embers.length; i++) {
         var em = this.embers[i];
@@ -528,6 +586,11 @@
       if (!s.alive) continue;
       s.flash = Math.max(0, s.flash - dt * 4);
 
+      // Frozen souls are staged props: the tutorial parks them where it needs
+      // them and they stay put. They can still be robbed, so a frozen soul is a
+      // target you can practise on rather than a chase you can lose.
+      if (s.frozen) { s.vx = s.vy = 0; s.throttle = 0; continue; }
+
       if (s.isPlayer && this.auto) {
         s.think -= dt;
         if (s.think <= 0) { s.think = s.w.react; this._steerBot(s, dt); }
@@ -632,10 +695,14 @@
         var rr = A.radius() + B.radius();
         if (dd > rr || dd < 0.0001) continue;
 
-        // Always resolve the overlap so souls never stack.
+        // Always resolve the overlap so souls never stack. A frozen soul is a
+        // fixture: it does not get shoved, or the lesson's staging drifts
+        // across the arena as the player leans on it.
         var push = (rr - dd) * 0.5;
-        A.x -= (dx / dd) * push; A.y -= (dy / dd) * push;
-        B.x += (dx / dd) * push; B.y += (dy / dd) * push;
+        var ka = A.frozen ? 0 : (B.frozen ? 2 : 1);
+        var kb = B.frozen ? 0 : (A.frozen ? 2 : 1);
+        A.x -= (dx / dd) * push * ka; A.y -= (dy / dd) * push * ka;
+        B.x += (dx / dd) * push * kb; B.y += (dy / dd) * push * kb;
 
         var key = A.id + ':' + B.id;
         if ((A.cd[key] || 0) > this.t) continue;
@@ -654,6 +721,7 @@
         dim.flame = Math.min(K.FLAME_MAX, dim.flame + kept);
         dim.peak = Math.max(dim.peak, dim.flame);
         dim.stolen += amount;
+        bright.robbed += amount;
         A.cd[key] = B.cd[key] = this.t + K.STEAL_CD;
 
         var kx = (bright.x - dim.x) / dd, ky = (bright.y - dim.y) / dd;
@@ -666,11 +734,11 @@
           { colors: [bright.color(), '#ffffff', dim.color()], speed: 40, speed2: 170, life: 0.2, life2: 0.6, r: 0.7, r2: 2.2, shape: 1 });
 
         if (dim.isPlayer) {
-          this.txt.add(mx, my - 5, '+' + Math.round(amount * K.STEAL_KEEP), '#00f5d4', 15);
+          this.txt.add(mx, my - 5, '+' + Math.round(amount * K.STEAL_KEEP), C.you, 15);
           this.cam.shake(0.38); this.stop.hit(0.075);
           this.emit('steal', { from: bright.name });
         } else if (bright.isPlayer) {
-          this.txt.add(mx, my - 5, '-' + Math.round(amount), '#ff2d55', 15);
+          this.txt.add(mx, my - 5, '-' + Math.round(amount), C.threat, 15);
           this.cam.shake(0.5); this.stop.hit(0.09);
           this.emit('drained', { by: dim.name });
         } else {
@@ -683,10 +751,13 @@
   Game.prototype._drain = function (dt) {
     var cx = 50, cy = this.worldH / 2;
     var entropy = 1 + this.t * K.ENTROPY_PER_SEC;
-    var solo = this.aliveCount === 1;
+    // A floored player must never enter the finale burn-down: that path is a
+    // scripted burn to zero and it is the one place the floor cannot hold.
+    var solo = this.aliveCount === 1 && !this.floor;
     for (var i = 0; i < this.souls.length; i++) {
       var s = this.souls[i];
       if (!s.alive) continue;
+      if (s.frozen) continue;              // staged props don't burn
       if (solo) {
         // The last soul burning gets a guaranteed FINALE_SECS of screen time.
         // Left to the normal formula this moment lasts a tenth of a second.
@@ -701,7 +772,13 @@
         this.light += burn;
         s.gave += burn;
         s.flame -= this._soloRate * dt;
-        if (s.isPlayer) this._playerOutside = false;
+        if (s.isPlayer) {
+          this._playerOutside = false;
+          // The floor is a promise, and it has to hold on every path out of
+          // this function — including the finale, which is the one path that
+          // deliberately burns a lamp all the way down.
+          if (this.floor && s.flame < this.floor) s.flame = this.floor;
+        }
         if (s.flame <= 0) { s.flame = 0; this._kill(s); }
         continue;
       }
@@ -719,7 +796,10 @@
       this.light += burned;
       s.gave += burned;
       s.flame -= d * dt;
-      if (s.isPlayer) this._playerOutside = outside;
+      if (s.isPlayer) {
+        this._playerOutside = outside;
+        if (this.floor && s.flame < this.floor) s.flame = this.floor;
+      }
 
       if (s.flame <= 0) {
         s.flame = 0;
@@ -736,7 +816,7 @@
 
     var col = s.isPlayer ? C.you : '#ffffff';
     this.fx.burst(this.vrng, s.x, s.y, s.isPlayer ? 64 : 26,
-      { colors: [col, '#ff2d55', '#7b2ff7'], speed: 30, speed2: s.isPlayer ? 210 : 120,
+      { colors: [col, C.threat, C.ring], speed: 30, speed2: s.isPlayer ? 210 : 120,
         life: 0.35, life2: s.isPlayer ? 1.3 : 0.8, r: 0.8, r2: s.isPlayer ? 3.2 : 2.0, drag: 0.93 });
     this.log.push({ name: s.name, rank: s.rank, t: s.diedAt, player: s.isPlayer });
 
@@ -828,6 +908,106 @@
     return d;
   };
 
+  /* Where the player stands in the field, as three numbers the HUD can show.
+   * Lamps the lesson has taken off the board are not counted: the HUD must never
+   * report a rival the player cannot see.
+   * `prey` is how many lamps you may take from, `threat` how many may take from
+   * you, `top` the brightest rival's flame — the tick the flame bar draws so
+   * "am I the biggest fire here" is answerable without counting rings. */
+  Game.prototype.roleCounts = function () {
+    var p = this.player, out = this._rc || (this._rc = { marks: [] });
+    var marks = out.marks;
+    marks.length = 0;
+    out.prey = out.threat = out.top = 0;
+    out.nearThreat = out.nearPrey = 1e4;   // finite, so the HUD never compares against Infinity
+    if (!p.alive) return out;
+    for (var i = 0; i < this.souls.length; i++) {
+      var s = this.souls[i];
+      if (!s.alive || s.isPlayer || s.offBoard) continue;
+      if (s.flame > out.top) out.top = s.flame;
+      var diff = s.flame - p.flame;
+      var d = Math.hypot(s.x - p.x, s.y - p.y);
+      // 1 = prey, -1 = threat, 0 = inside the dead zone, where contact is inert.
+      var role = 0;
+      if (diff > K.STEAL_MIN_DIFF) {
+        role = 1; out.prey++;
+        if (d < out.nearPrey) out.nearPrey = d;
+      } else if (diff < -K.STEAL_MIN_DIFF) {
+        role = -1; out.threat++;
+        if (d < out.nearThreat) out.nearThreat = d;
+      }
+      marks.push(s.flame, role);
+    }
+    return out;
+  };
+
+  /* Flame is time, so say it in seconds: this is the number the HUD shows.
+   * It rises when you eat and falls as you brighten, which is the whole
+   * economy of the game expressed as one figure.
+   *
+   * It is NOT flame / burn-rate. Drain is proportional to flame, so the rate
+   * falls as you dim and the naive quotient is badly pessimistic -- measured at
+   * 10.8s against a real 16.4s, a 51% lie in the one readout the player is
+   * asked to trust. Integrate instead. With
+   *
+   *     df/dt = -(A + B*f),   A = DRAIN_BASE*entropy (+ VOID_DRAIN outside)
+   *                           B = DRAIN_K*entropy
+   *
+   * the time to reach flame 0 is ln(1 + B*f/A) / B.
+   *
+   * Entropy climbs while you burn, so that first pass is optimistic at high
+   * flame (+12.7% at flame 80). One fixed-point step -- re-evaluate entropy at
+   * the midpoint of the interval the first pass predicted -- takes the worst
+   * case to about 2% for the cost of a second log. Measured against a pure-drain
+   * sim across flame 8..80 and t 0..40. */
+  Game.prototype.playerSecondsLeft = function () {
+    var p = this.player;
+    if (!p.alive) return 0;
+    // The finale burns the last lamp down on a fixed schedule, so there is no
+    // curve to integrate: the rate IS the answer.
+    if (this.aliveCount === 1 && this._soloRate > 0) return p.flame / this._soloRate;
+    var out = this.nd(p.x, p.y) > 1 ? K.VOID_DRAIN : 0;
+    var t = this._lifeAt(this.t, p.flame, out);
+    return Math.min(999, this._lifeAt(this.t + t * 0.5, p.flame, out));
+  };
+  Game.prototype._lifeAt = function (tEntropy, flame, voidDrain) {
+    var entropy = 1 + tEntropy * K.ENTROPY_PER_SEC;
+    var A = K.DRAIN_BASE * entropy + voidDrain;
+    var B = K.DRAIN_K * entropy;
+    if (A <= 0 || B <= 0) return 999;
+    return Math.log(1 + B * flame / A) / B;
+  };
+
+  /* Nearest armed ember, for the fuel needle at the screen edge. Arming embers
+   * are deliberately excluded — pointing a player at food they cannot eat yet
+   * is worse than pointing them nowhere. */
+  Game.prototype.nearestFuel = function () {
+    var p = this.player, best = null, bd = Infinity;
+    if (!p.alive) return null;
+    for (var i = 0; i < this.embers.length; i++) {
+      var e = this.embers[i];
+      if (e.arm > 0) continue;
+      var d = Math.hypot(e.x - p.x, e.y - p.y);
+      if (d < bd) { bd = d; best = e; }
+    }
+    return best;
+  };
+
+  /* Once the fuel is gone the needle has to point at something, and what it
+   * points at IS the phase change: the food is other people now. */
+  Game.prototype.nearestPrey = function () {
+    var p = this.player, best = null, bd = Infinity;
+    if (!p.alive) return null;
+    for (var i = 0; i < this.souls.length; i++) {
+      var s = this.souls[i];
+      if (!s.alive || s.isPlayer || s.offBoard) continue;
+      if (s.flame - p.flame <= K.STEAL_MIN_DIFF) continue;
+      var d = Math.hypot(s.x - p.x, s.y - p.y);
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best;
+  };
+
   /* The game's stated goal is to die, so death is on offer at all times and
    * without a confirmation. Almost everyone presses it once, goes out 9th, and
    * learns the entire design in one second: it never asked you to die, it asked
@@ -838,7 +1018,7 @@
     s.flame = 0;
     this.letGoUsed = true;
     this.fx.burst(this.vrng, s.x, s.y, 30,
-      { colors: ['#00f5d4', '#ffffff'], speed: 20, speed2: 150, life: 0.3, life2: 1.0, r: 0.7, r2: 2.6 });
+      { colors: [C.you, '#ffffff'], speed: 20, speed2: 150, life: 0.3, life2: 1.0, r: 0.7, r2: 2.6 });
     this._kill(s);
     return true;
   };

@@ -1,12 +1,16 @@
 /* sw.js — offline cache. Network-first for navigations so a deploy is picked up
  * immediately; cache-first for the static assets. Bump CACHE to invalidate.
  */
-var CACHE = 'last-one-dead-v1';
+/* Bump CACHE on every deploy. Static assets are served cache-first, so a stale
+ * cache name is not a slow update — it is a player permanently running last
+ * week's code with this week's index.html. */
+var CACHE = 'last-one-dead-v3';
 var ASSETS = [
   './', './index.html', './manifest.json',
   './css/style.css',
   './js/rng.js', './js/platform.js', './js/input.js', './js/audio.js',
-  './js/juice.js', './js/render.js', './js/game.js', './js/share.js', './js/main.js',
+  './js/juice.js', './js/story.js', './js/render.js', './js/game.js',
+  './js/share.js', './js/tutorial.js', './js/main.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png',
   './icons/apple-touch-icon.png'
 ];

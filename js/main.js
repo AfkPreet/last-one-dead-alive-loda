@@ -9,8 +9,11 @@
 
   var els = {
     frame: $('frame'), stage: $('stage'), hud: $('hud'),
-    alive: $('hud-alive'), clock: $('hud-clock'), burn: $('hud-burn'), pips: $('pips'),
+    clock: $('hud-clock'), burn: $('hud-burn'), life: $('hud-life'), pips: $('pips'),
     phase: $('hud-phase-label'), bar: $('flamebar-fill'),
+    barBox: $('flamebar'), dead: $('flamebar-dead'), marks: $('flamebar-marks'),
+    tallyPrey: $('tally-prey'), tallyThreat: $('tally-threat'),
+    tut: $('tut'), tutLine: $('tut-line'), tutDots: $('tut-dots'),
     coach: $('coach'), count: $('countdown'), toast: $('toast'),
     menu: $('menu'), how: $('how'), settings: $('settings'), results: $('results'),
     naming: $('naming'), nameInput: $('name-input'), tag: $('menu-tag'),
@@ -22,6 +25,7 @@
   var renderer = new global.Renderer(surface);
   var input = new global.Input(els.stage);
   var game = null;
+  var tut = null;                      // the scripted first night, or null
   var ledger = global.Story.load();
   var mode = Store.get('mode', 'daily');
   var challenge = S.parseChallenge();
@@ -37,21 +41,25 @@
     });
     els.hud.classList.toggle('show', name === null);
     els.hud.setAttribute('aria-hidden', name === null ? 'false' : 'true');
+    if (name !== null) els.tut.classList.remove('show');
     input.enabled = (name === null);
     if (name !== null) input.reset();
     screen = name;
   }
   /* One pip per soul, so the player never has to parse an ordinal mid-match. */
-  var pipEls = [];
+  var pipEls = [], pipCount = null;
   function buildPips() {
     els.pips.innerHTML = '';
     pipEls = [];
-    for (var i = 0; i < Game.K.SOULS; i++) {
+    for (var i = 0; i < game.souls.length; i++) {
       var d = document.createElement('div');
       d.className = 'pip lit';
       els.pips.appendChild(d);
       pipEls.push(d);
     }
+    pipCount = document.createElement('span');
+    pipCount.className = 'pipcount';
+    els.pips.appendChild(pipCount);
   }
   function updatePips() {
     // Sorted so the pips go out left-to-right: the row reads as a countdown.
@@ -62,6 +70,12 @@
       var cls = 'pip ' + (s.alive ? (s.isPlayer ? 'you' : 'lit') : 'out');
       if (pipEls[i].className !== cls) pipEls[i].className = cls;
     }
+    // Counting dots is fine at twelve and wrong at three: in the finale the
+    // exact number is a decision, so it gets a numeral and nothing else does.
+    var n = game.aliveCount, show = n <= 4;
+    var txt = show ? n + ' LEFT' : '';
+    if (pipCount._t !== txt) { pipCount._t = txt; pipCount.textContent = txt; }
+    pipCount.classList.toggle('show', show);
   }
   var pipOrder = [];
 
@@ -69,8 +83,14 @@
   function toast(msg, ms) {
     els.toast.textContent = msg;
     els.toast.classList.add('show');
+    // One text channel at a time. A toast, a phase label and a coach line used
+    // to fire together in three type styles about the same second.
+    els.hud.classList.add('toasting');
     clearTimeout(toastT);
-    toastT = setTimeout(function () { els.toast.classList.remove('show'); }, ms || 1800);
+    toastT = setTimeout(function () {
+      els.toast.classList.remove('show');
+      els.hud.classList.remove('toasting');
+    }, ms || 1800);
   }
   function haptic(p) { P.vibrate(p); }
 
@@ -129,6 +149,10 @@
       els.menuSeed.textContent = 'ENDLESS · RANDOM ARENA';
       $('btn-mode').textContent = 'switch to daily';
     }
+    // A first-timer is about to get a lesson, not a match; say so on the button
+    // rather than dropping them into one and explaining afterwards.
+    $('btn-play').textContent = global.Tutorial.done() ? 'ENTER THE DARK' : 'LEARN THE DARK';
+
     // The tagline above already names who you hold, so this line is only your
     // own record. Kept to one line on a 320px screen.
     var bits = [];
@@ -157,6 +181,14 @@
   function pumpCoach(now) {
     // Tell the renderer which band of the screen the coach line is occupying so
     // soul name labels get out of its way.
+    //
+    // This used to read two bounding rects EVERY frame, immediately after the
+    // HUD had written to the same elements — a forced synchronous layout per
+    // frame for a number that only changes when the phone rotates. It is
+    // measured with the rest of the HUD now, and the coach's own band is read
+    // only while a line is actually up.
+    if (!topBandPx) measureHud();
+    renderer.topBand = topBandPx;
     if (els.coach.classList.contains('show')) {
       var fb = els.frame.getBoundingClientRect();
       // Put the line in the half the player is not in.
@@ -230,7 +262,7 @@
   var countdownN = 0, countdownT = 0, openingLines = [];
   var seenPickup = false, seenSteal = false, seenDrain = false, warnedOnce = false;
 
-  function startMatch() {
+  function startMatch(teach) {
     A.unlock();
     stopPreview();
     cancelAnimationFrame(loopId);
@@ -241,7 +273,7 @@
     // "?d=<today>", dropping the seed and breaking the challenge chain at the
     // first forward. The tag is metadata only — seedFor() below picks the arena.
     var m = challenge ? (challenge.seed ? 'endless' : 'daily') : mode;
-    game = new Game({ seed: seedFor(m), mode: m });
+    game = new Game(teach ? global.Tutorial.options() : { seed: seedFor(m), mode: m });
     game.cam.enabled = settings.shake;
     game.reduced = !settings.shake;
     renderer.contrast = settings.contrast;
@@ -250,14 +282,14 @@
     // Name the other eleven from your own ledger: strangers on night one, and
     // by night ten a field of people you have outlasted, lost to, or dropped.
     // Purely cosmetic — the arena itself stays identical for everyone.
-    var pool = global.Story.namePool(ledger, new R.Rng(game.seedStr + ':names'), Game.K.SOULS - 1);
+    var pool = global.Story.namePool(ledger, new R.Rng(game.seedStr + ':names'), game.souls.length - 1);
     for (var pi = 1; pi < game.souls.length; pi++) game.souls[pi].name = pool[pi - 1];
 
     // A challenger's soul is renamed after them, but nothing about the
     // simulation changes — the daily has to be identical for everyone or the
     // shared scores mean nothing.
     if (challenge && challenge.name) {
-      var idx = 1 + (R.hashString(game.seedStr) % (Game.K.SOULS - 1));
+      var idx = 1 + (R.hashString(game.seedStr) % (game.souls.length - 1));
       game.souls[idx].name = challenge.name;
       game.ghostSoul = game.souls[idx];
     }
@@ -265,7 +297,7 @@
     // Player pip first, then bots — the row then reads left-to-right as a
     // countdown with "you" always in the same place.
     pipOrder = [0];
-    for (var pi = 1; pi < Game.K.SOULS; pi++) pipOrder.push(pi);
+    for (var pi = 1; pi < game.souls.length; pi++) pipOrder.push(pi);
     buildPips();
     els.results.classList.remove('settled');
 
@@ -282,6 +314,7 @@
     var op = global.Story.opening(ledger);
     openingLines = ledger.nights < 3 ? op : [op[op.length - 1]];
     show(null);
+    measureHud();                       // the strip is display:none until now
     // Fire the first line on the very first frame rather than after a beat of
     // dead air.
     countdownN = openingLines.length; countdownT = 99;
@@ -289,11 +322,62 @@
     A.startMusic();
     A.setIntensity(0);
 
-    if (coachSeen < 2) {
+    // The lesson replaces the coach entirely — being taught the same thing
+    // twice in two different type styles is how a tutorial stops being read.
+    tut = teach ? new global.Tutorial.Tutorial(game) : null;
+    els.hud.classList.toggle('teaching', !!teach);
+    els.tut.classList.toggle('show', !!teach);
+    if (teach) {
+      buildTutDots(tut.total);
+      // No countdown and no opening prose: the lesson is the opening.
+      openingLines = []; countdownN = 0;
+      els.count.textContent = ''; els.count.classList.remove('line', 'tick');
+      game.startPlay();
+      pumpTut();
+    } else if (coachSeen < 2) {
       coach('<em>DRAG</em> ANYWHERE TO MOVE', 2.2);
       coach('THE SPIKES ARE <em>FUEL</em>.<br>RUN <em>INTO</em> THEM.', 3.2);
     }
     loopId = requestAnimationFrame(frame);
+  }
+
+  /* ---------- the lesson ---------- */
+  var tutDotEls = [];
+  function buildTutDots(n) {
+    els.tutDots.innerHTML = '';
+    tutDotEls = [];
+    for (var i = 0; i < n; i++) {
+      var d = document.createElement('i');
+      els.tutDots.appendChild(d);
+      tutDotEls.push(d);
+    }
+  }
+  function pumpTut() {
+    if (!tut) return;
+    if (els.tutLine.innerHTML !== tut.line) els.tutLine.innerHTML = tut.line;
+    for (var i = 0; i < tutDotEls.length; i++) {
+      var cls = i + 1 < tut.step ? 'past' : (i + 1 === tut.step ? 'on' : '');
+      if (tutDotEls[i].className !== cls) tutDotEls[i].className = cls;
+    }
+    // Same rule as the coach line, but aimed at whatever the beat has staged:
+    // the sentence goes in the half the lesson is not happening in.
+    var h = els.frame.getBoundingClientRect().height;
+    els.tutLine.classList.toggle('low', renderer.toScreenY(tut.focusY()) < h * 0.5);
+    var lb = els.tutLine.getBoundingClientRect(), fb = els.frame.getBoundingClientRect();
+    renderer.coachBand = [lb.top - fb.top - 6, lb.bottom - fb.top + 6];
+  }
+  /** Hand the player off to a real night. Called on the last beat and on skip. */
+  function endTutorial() {
+    if (!tut) return;
+    tut = null;
+    global.Tutorial.markDone();
+    // The old one-shot coach lines taught the same two things; don't repeat them.
+    coachSeen = Math.max(coachSeen, 2);
+    Store.set('coached', coachSeen);
+    els.tut.classList.remove('show');
+    els.hud.classList.remove('teaching');
+    renderer.coachBand = null;
+    startMatch();
   }
 
   var ghostPassed = false;
@@ -310,13 +394,21 @@
     // Countdown runs on wall time, before the sim starts.
     if (game.state === 'countdown') {
       countdownT += dt;
+      // Keep the lamps' name labels out from under the opening.
+      var ci = els.count.firstElementChild;
+      if (ci) {
+        var cr = ci.getBoundingClientRect(), cf = els.frame.getBoundingClientRect();
+        renderer.coachBand = [cr.top - cf.top - 6, cr.bottom - cf.top + 6];
+      }
       // Prose needs longer on screen than a digit does; the last beat is short.
       var hold = countdownN > 0 ? 2.0 : 0.7;
       if (countdownT >= hold) {
         countdownT = 0;
         if (countdownN > 0) {
           var idx = openingLines.length - countdownN;
-          els.count.innerHTML = openingLines[idx] || '';
+          // Wrapped so the prose gets its own scrim and its own measurable box:
+          // the opening used to print straight over the lamps' name labels.
+          els.count.innerHTML = '<span class="count-in">' + (openingLines[idx] || '') + '</span>';
           els.count.classList.add('line');
           els.count.classList.remove('tick');
           void els.count.offsetWidth;                 // restart the CSS animation
@@ -326,6 +418,7 @@
           countdownN--;
         } else {
           els.count.textContent = 'BURN';
+          renderer.coachBand = null;
           els.count.classList.remove('line', 'tick');
           void els.count.offsetWidth;
           els.count.classList.add('tick');
@@ -346,7 +439,11 @@
 
     drainEvents();
     updateHud();
-    if (game.state !== 'countdown' && game.player.alive) pumpCoach(now / 1000);
+    if (tut) {
+      tut.update(dt);
+      if (tut.finished) { endTutorial(); return; }
+      pumpTut();
+    } else if (game.state !== 'countdown' && game.player.alive) pumpCoach(now / 1000);
     else if (!game.player.alive) { els.coach.classList.remove('show'); renderer.coachBand = null; }
 
     renderer.draw(game, input, now / 1000);
@@ -376,15 +473,19 @@
         case 'dash': A.play('ui'); haptic(10); break;
         case 'dashFail': toast('TOO DIM TO DASH', 900); break;
         case 'soulDied':
-          A.play('soulOut', Game.K.SOULS - e.data.left);
+          A.play('soulOut', game.souls.length - e.data.left);
           if (game.ghostSoul && e.data.name === game.ghostSoul.name) toast(e.data.name + ' IS OUT', 1400);
           break;
         case 'ringWarn':
+          // No coach line here: the phase label already reads THE LIGHT IS
+          // CLOSING for as long as it is true, and saying it twice at once just
+          // put the same sentence on screen in two places.
           A.play('ringWarn');
-          if (coachSeen < 2 && !warnedOnce) { warnedOnce = true; coach('THE LIGHT IS CLOSING.', 2.0); }
           break;
         case 'ringMove': A.play('ringMove'); break;
-        case 'fuelGone': A.play('danger'); toast('NO FUEL LEFT — TAKE IT FROM SOMEONE', 2400); break;
+        // No toast: the phase label carries this for as long as it is true, and
+        // the edge needle has already swung from fuel to the nearest prey.
+        case 'fuelGone': A.play('danger'); break;
         case 'finale': A.play('danger'); haptic([60, 40, 60]); break;
         case 'playerDied': A.play('death'); haptic([90, 60, 140]); break;
         case 'finished': onFinished(e.data); break;
@@ -393,7 +494,7 @@
     ev.length = 0;
 
     // Music tightens as the arena empties.
-    A.setIntensity(1 - (game.aliveCount - 1) / (Game.K.SOULS - 1));
+    A.setIntensity(1 - (game.aliveCount - 1) / Math.max(1, game.souls.length - 1));
 
     if (!ghostPassed && challenge && challenge.time && game.player.alive && game.t > challenge.time) {
       ghostPassed = true;
@@ -402,41 +503,130 @@
     }
   }
 
+  /* Your own flame ramped in the ONE colour that means "you". The bar used to
+   * be painted with FLAME_RAMP, i.e. the same violet as every rival body on
+   * screen — the one readout that is unambiguously yours wore everybody's
+   * colour. Luminance still rises with flame, so it is the same ordered scale;
+   * only the hue is now unique. */
+  var YOU_RAMP = [[0.00, '#0a5f53'], [0.45, '#12d7b4'], [1.00, '#bafff2']];
+
+  /* The strip's marks are DOM, so they are positioned with transforms and only
+   * written when they actually move. Width is measured on resize, never in the
+   * frame loop — reading clientWidth every frame is a forced layout 60 times a
+   * second for a number that changes when the phone rotates. */
+  var barW = 0, topBandPx = 0, markEls = [];
+  function measureHud() {
+    barW = els.barBox.clientWidth || 0;
+    var fb = els.frame.getBoundingClientRect();
+    var pb = els.phase.getBoundingClientRect();
+    topBandPx = pb.height ? pb.bottom - fb.top + 6 : 0;
+  }
+  function markAt(i) {
+    while (markEls.length <= i) {
+      var el = document.createElement('i');
+      els.marks.appendChild(el);
+      markEls.push(el);
+    }
+    return markEls[i];
+  }
+  function updateStrip(f, rc, alive) {
+    if (!barW) measureHud();
+    var px = barW / 100;
+    var m = rc.marks, n = alive ? m.length / 2 : 0;
+    for (var i = 0; i < n; i++) {
+      var el = markAt(i);
+      var flame = m[i * 2], role = m[i * 2 + 1];
+      var x = Math.round(Math.max(0, Math.min(100, flame)) * px * 2) / 2;
+      if (el._x !== x) { el._x = x; el.style.transform = 'translateX(' + x + 'px)'; }
+      var cls = role > 0 ? 'prey' : role < 0 ? 'threat' : 'tie';
+      if (el._c !== cls) { el._c = cls; el.className = cls; }
+      if (el._h !== 1) { el._h = 1; el.hidden = false; }
+    }
+    for (var j = n; j < markEls.length; j++) {
+      if (markEls[j]._h !== 0) { markEls[j]._h = 0; markEls[j].hidden = true; }
+    }
+    // The dead zone travels with you: +/-6 flame, centred on your own edge.
+    var dz = (Game.K.STEAL_MIN_DIFF || 6);
+    var dx = Math.round((f - dz) * px * 2) / 2;
+    if (els.dead._x !== dx) { els.dead._x = dx; els.dead.style.transform = 'translateX(' + dx + 'px)'; }
+    // Width is a layout property and the dead zone never changes size; writing
+    // it every frame invalidated layout sixty times a second for a constant.
+    var w = (dz * 2) + '%';
+    if (els.dead._w !== w) { els.dead._w = w; els.dead.style.width = w; }
+  }
+
   function updateHud() {
     var p = game.player;
-    els.alive.textContent = game.aliveCount;
     els.clock.textContent = S.mmss(game.t);
     updatePips();
 
     var f = p.alive ? p.flame : 0;
+    var rc = game.roleCounts();
     els.bar.style.width = Math.max(0, Math.min(100, f)).toFixed(1) + '%';
-    els.bar.style.background = global.Juice.rampHex(Game.FLAME_RAMP, f / 100, 14);
+    els.bar.style.background = global.Juice.rampHex(YOU_RAMP, f / 100, 12);
+    updateStrip(f, rc, p.alive);
+    // Nothing on the track ahead of you AND somebody behind it: you are the
+    // brightest lamp burning, which is this game's definition of being the
+    // meal. Both halves matter — at the start of a match every lamp is at 40
+    // and prey is 0 because the whole field is inside the dead zone, which is
+    // the opposite situation and must not raise the same alarm.
+    els.barBox.classList.toggle('over', p.alive && rc.prey === 0 && rc.threat > 0);
 
-    // The needle that makes "the fuel is the poison" legible: it climbs the
-    // instant you brighten, so eating is visibly a trade, not a reward.
+    setTally(els.tallyPrey, rc.prey, false, false);
+    // A count is not urgency. The pill only pulses when the nearest thing that
+    // can rob you is actually close enough to do it.
+    setTally(els.tallyThreat, rc.threat, true, rc.nearThreat < 17);
+
+    /* THE ANSWER TO "AM I ABOUT TO GO OUT".
+     * flame alone cannot answer it (flame 30 is a minute early and four seconds
+     * late), and a bare rate cannot either. flame / rate can, in one figure,
+     * and it doubles as the game's economics lesson: eat, and the number jumps
+     * while the rate beside it climbs, so the diminishing return is something
+     * you watch rather than something you are told. */
     var out = !p.alive;
     els.hud.classList.toggle('out', out);
+    var crit = false, dire = false;
     if (out) {
-      els.burn.textContent = 'OUT';
-      els.burn.style.color = '';
+      els.life.textContent = 'OUT';
+      els.burn.textContent = '';
       $('btn-letgo').firstChild.textContent = 'SKIP';
     } else {
+      var secs = game.playerSecondsLeft();
+      var txt = secs >= 10 ? Math.round(secs) + 's' : secs.toFixed(1) + 's';
+      if (els.life._t !== txt) { els.life._t = txt; els.life.textContent = txt; }
       var rate = game.playerBurnRate();
-      els.burn.textContent = '-' + rate.toFixed(1) + '/s';
-      els.burn.style.color = global.Juice.rampHex(Game.FLAME_RAMP, Math.min(1, rate / 9), 10);
+      var rtxt = '-' + rate.toFixed(1) + '/s';
+      if (els.burn._t !== rtxt) { els.burn._t = rtxt; els.burn.textContent = rtxt; }
+      crit = secs < 6; dire = secs < 3;
+      var lcls = 'life' + (dire ? ' crit dire' : crit ? ' crit' : secs < 10 ? ' warn' : '');
+      if (els.life.className !== lcls) els.life.className = lcls;
       $('btn-letgo').firstChild.textContent = 'LET GO';
     }
+    // The blink lives on #hud so the number, the strip and the screen border
+    // all flash in phase — one alarm, not three things that happen to be red.
+    els.hud.classList.toggle('crit', crit);
+    els.hud.classList.toggle('dire', dire);
 
     var label, warn = false;
     if (!p.alive) { label = 'YOU ARE OUT — TAP TO SKIP'; warn = true; }
     else if (game.letGoUsed) { label = 'LETTING GO'; warn = true; }
     else if (game.state === 'finale') { label = 'LAST ONE BURNING'; warn = true; }
-    else if (game.fuelGone) { label = 'NO FUEL LEFT'; warn = true; }
+    else if (game.fuelGone) { label = 'NO FUEL LEFT — TAKE IT FROM SOMEONE'; warn = true; }
     else if (game._playerOutside) { label = 'YOU ARE IN THE VOID'; warn = true; }
     else if (game.ringStage === 1) { label = 'THE LIGHT IS CLOSING'; warn = true; }
     else label = 'THE LIGHT HOLDS';
     if (els.phase.textContent !== label) els.phase.textContent = label;
     els.phase.classList.toggle('warn', warn);
+  }
+
+  /* A tally at zero is still information — it says "nothing here can touch you"
+   * — so it dims rather than disappearing and the row never reflows. */
+  function setTally(el, n, isThreat, near) {
+    var b = el._n || (el._n = el.getElementsByTagName('b')[0]);
+    if (b.textContent !== String(n)) b.textContent = n;
+    var cls = 'tally ' + (isThreat ? 'threat' : 'prey') +
+              (n === 0 ? ' zero' : '') + (isThreat && n > 0 && near ? ' near' : '');
+    if (el.className !== cls) el.className = cls;
   }
 
   /* Deadpan sign-off, drawn from a seeded stream so a given run always gets the
@@ -485,6 +675,7 @@
     // A match toast landing on the results copy reads as a layout bug.
     clearTimeout(toastT);
     els.toast.classList.remove('show');
+    els.hud.classList.remove('toasting', 'crit', 'dire');
     A.stopMusic(0.8);
     cancelAnimationFrame(loopId);
     loopId = requestAnimationFrame(idleFrame);
@@ -642,7 +833,7 @@
       e.preventDefault();
       if (game.state === 'spectate') game.skipSpectate(); else game.dash();
     }
-    if (e.key === 'Enter' && screen === 'menu') startMatch();
+    if (e.key === 'Enter' && screen === 'menu') startMatch(!global.Tutorial.done());
   });
 
   /* ---------- buttons ---------- */
@@ -703,7 +894,16 @@
     $('name-count').textContent = els.nameInput.value.length + '/12';
   });
 
-  $('btn-play').addEventListener('click', function () { A.unlock(); A.play('ui'); startMatch(); });
+  // First ever play goes through the lesson; after that the button is the game.
+  $('btn-play').addEventListener('click', function () {
+    A.unlock(); A.play('ui'); startMatch(!global.Tutorial.done());
+  });
+  $('btn-tut-skip').addEventListener('click', function (e) {
+    e.stopPropagation(); A.play('ui'); endTutorial();
+  });
+  $('btn-replay-tut').addEventListener('click', function () {
+    A.unlock(); A.play('ui'); applySettings(); startMatch(true);
+  });
   $('btn-again').addEventListener('click', function () { A.play('ui'); startMatch(); });
   $('btn-menu').addEventListener('click', function () {
     A.play('ui');
@@ -756,6 +956,7 @@
   surface.onResize = function () {
     // Mid-match the world stays as dealt; a resize must not change the arena.
     if (!game) renderer.layout(Game.WORLD_H, 0, 0, 0);
+    measureHud();
   };
 
   // The single-file bundle (tools/bundle.js) ships without a manifest or an
@@ -800,7 +1001,7 @@
   /** The idle arena behind the title has to be the same world the story is
    *  about; a solemn line over a field of joke handles reads as an accident. */
   function namePreview(g) {
-    var pool = global.Story.namePool(ledger, new R.Rng(g.seedStr + ':names'), Game.K.SOULS - 1);
+    var pool = global.Story.namePool(ledger, new R.Rng(g.seedStr + ':names'), g.souls.length - 1);
     for (var i = 1; i < g.souls.length; i++) g.souls[i].name = pool[i - 1];
   }
 
